@@ -3,8 +3,6 @@
 **Application for constructing a maritime vessel's course based on neural-network
 classification of geographic zones.**
 
-Diploma project · Li Haoran · Brest State Technical University, Department of
-Intelligent Information Technologies · supervisor А.А. Козинский · 2026/27
 
 > Chinese version of this document: [README_zh.md](README_zh.md).
 > Step-by-step installation: [docs/INSTALL.md](docs/INSTALL.md).
