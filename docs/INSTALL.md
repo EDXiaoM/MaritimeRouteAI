@@ -22,7 +22,7 @@ GPU is needed at any stage.
 Clone the repository from GitHub (or unpack the delivered archive):
 
 ```bash
-git clone https://github.com/<your-account>/MaritimeRouteAI.git
+git clone https://github.com/EDXiaoM/MaritimeRouteAI.git
 cd MaritimeRouteAI
 ```
 

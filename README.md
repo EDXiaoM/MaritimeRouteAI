@@ -102,7 +102,7 @@ and is discussed in the thesis.
 ## 4. Installation and start
 
 ```bash
-git clone https://github.com/<your-account>/MaritimeRouteAI.git
+git clone https://github.com/EDXiaoM/MaritimeRouteAI.git
 cd MaritimeRouteAI
 
 python -m venv .venv

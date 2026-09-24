@@ -83,7 +83,7 @@
 ## 四、安装与启动
 
 ```bash
-git clone https://github.com/<你的账号>/MaritimeRouteAI.git
+git clone https://github.com/EDXiaoM/MaritimeRouteAI.git
 cd MaritimeRouteAI
 
 python -m venv .venv
