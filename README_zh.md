@@ -2,7 +2,6 @@
 
 **基于神经网络地理区域分类的海船航线构建应用程序**
 
-毕业设计 · Li Haoran · 布列斯特国立技术大学 智能信息技术教研室 · 指导老师 А.А. Козинский · 2026/27 学年
 
 > 英文版说明见 [README.md](README.md)；详细安装步骤见 [docs/INSTALL.md](docs/INSTALL.md)；完整使用手册见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
 
