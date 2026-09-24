@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Maritime Route Planner - single-page client.
+     单页前端：左侧为控制面板（规划/数据/对比/模型/历史五个标签页），
+     右侧为 Leaflet 海图。所有交互通过 api.js 的 REST 与 WebSocket 完成。
+     Served by GET / (maritime_route/web/app.py). Layout: a top bar with status
+     pills, a left control panel with five tabs (Plan, Data, Compare, Model,
+     History) and a Leaflet chart on the right. The page has no inline script;
+     behaviour lives in js/api.js (server access), js/charts.js (charts) and
+     js/app.js (UI logic), which look elements up by the id attributes below.
+     Leaflet is bundled under /static/vendor so the page works without
+     internet access. -->
+<!-- Document metadata: encoding, responsive viewport, favicon (served inline by GET /favicon.ico). -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<title>Maritime Route Planner</title>
+<!-- Stylesheets: Leaflet first, then the application sheet, which overrides some Leaflet rules. -->
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<!-- Top bar: application name and two status pills. 顶栏：标题与状态标签。 -->
+<header class="topbar">
+  <!-- Brand: inline SVG anchor icon and title/subtitle. -->
+  <div class="brand">
+    <svg viewBox="0 0 24 24" class="brand-icon" aria-hidden="true">
+      <path d="M12 2v14M12 5h5l-5 4M4 17c2 2 4 2 4 2h8s2 0 4-2l-2 5H6z"/>
+    </svg>
+    <div>
+      <h1>Maritime Route Planner</h1>
+      <p>Neural-network classification of geographic zones &middot; A* · Dijkstra · genetic · dynamic programming</p>
+    </div>
+  </div>
+  <!-- Status pills updated by app.js: #ws-status = WebSocket state
+       (live connection / reconnecting / connection error), #model-pill = model
+       test accuracy or "model unavailable". 状态标签：WebSocket 连接状态与模型状态。 -->
+  <div class="status-cluster">
+    <span id="ws-status" class="pill pill-wait">connecting…</span>
+    <span id="model-pill" class="pill pill-muted">model —</span>
+  </div>
+</header>
+
+<!-- Two-column layout: control panel and chart. 两栏布局：控制面板 + 海图。 -->
+<main class="layout">
+  <!-- ---------------------------------------- control panel  控制面板 -->
+  <aside class="panel" id="panel">
+    <!-- Tab bar: a button with data-tab="X" shows the section with id="tab-X"
+         (tab handler in app.js). 选项卡：data-tab 对应 id 为 tab-X 的页面。 -->
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="plan" role="tab">Plan</button>
+      <button class="tab" data-tab="data" role="tab">Data</button>
+      <button class="tab" data-tab="compare" role="tab">Compare</button>
+      <button class="tab" data-tab="model" role="tab">Model</button>
+      <button class="tab" data-tab="history" role="tab">History</button>
+    </nav>
+
+    <!-- ---------------------------------------------------- PLAN -->
+    <section class="tab-page active" id="tab-plan">
+      <!-- Click hint; app.js rewrites it to say whether the next map click sets
+           the departure or the destination. -->
+      <div class="hint" id="pick-hint">
+        Click the chart to set <b>departure</b>, click again to set <b>destination</b>.
+      </div>
+
+      <!-- Departure coordinates in decimal degrees. Filled by map clicks,
+           marker drags and preset chips, and editable by hand; read by app.js
+           before every request. The default voyage is Kiel -> Tallinn.
+           起点坐标（十进制度）。 -->
+      <div class="field-row">
+        <label class="field">
+          <span>Departure lat</span>
+          <input type="number" id="start-lat" step="0.0001" value="54.3233">
+        </label>
+        <label class="field">
+          <span>Departure lon</span>
+          <input type="number" id="start-lon" step="0.0001" value="10.1228">
+        </label>
+      </div>
+      <!-- Destination coordinates in decimal degrees. 终点坐标。 -->
+      <div class="field-row">
+        <label class="field">
+          <span>Destination lat</span>
+          <input type="number" id="end-lat" step="0.0001" value="59.4370">
+        </label>
+        <label class="field">
+          <span>Destination lon</span>
+          <input type="number" id="end-lon" step="0.0001" value="24.7536">
+        </label>
+      </div>
+
+      <!-- Preset voyages: data-preset="startLat,startLon,endLat,endLon". A click
+           fills the four inputs and zooms the map; planning is not started.
+           预设航线：点击后填入坐标并缩放地图。 -->
+      <div class="preset-row">
+        <span class="preset-label">Presets</span>
+        <button class="chip" data-preset="54.3233,10.1228,59.4370,24.7536">Kiel → Tallinn</button>
+        <button class="chip" data-preset="51.9500,4.1400,38.6900,-9.4000">Rotterdam → Lisbon</button>
+        <button class="chip" data-preset="60.1699,24.9384,55.6761,12.5683">Helsinki → Copenhagen</button>
+        <button class="chip" data-preset="46.5209,30.7727,44.7252,37.7930">Odesa → Novorossiysk</button>
+      </div>
+
+      <!-- Search algorithm; option values are the names accepted by the server
+           (config.SUPPORTED_ALGORITHMS). 搜索算法选择。 -->
+      <label class="field">
+        <span>Search algorithm</span>
+        <select id="algorithm">
+          <option value="astar">A* (heuristic, fastest)</option>
+          <option value="dijkstra">Dijkstra (uniform cost)</option>
+          <option value="genetic">Genetic algorithm (evolutionary)</option>
+          <option value="dynamic">Dynamic programming (Bellman equation)</option>
+          <option value="great_circle">Great circle (shortest distance)</option>
+        </select>
+      </label>
+
+      <!-- Grid resolution slider (cell size of the routing lattice, 0.1..1.0 deg);
+           the <output> shows the current value. Finer grids pass narrower straits
+           but take longer; the server refines automatically if no passage is found.
+           网格分辨率：越细越能通过狭窄海峡，但计算更慢。 -->
+      <label class="field">
+        <span>Grid resolution <output id="res-out">0.25°</output></span>
+        <input type="range" id="resolution" min="0.1" max="1.0" step="0.05" value="0.25">
+      </label>
+
+      <!-- Service speed in knots; used only for the passage-time estimate. 航速（节）。 -->
+      <label class="field">
+        <span>Service speed <output id="speed-out">14 kn</output></span>
+        <input type="range" id="speed" min="6" max="30" step="0.5" value="14">
+      </label>
+
+      <!-- Display options: the classified lattice sent with the result
+           ("overlay" WebSocket frame) and the live zone read-out under the pointer
+           ("classify" WebSocket action). 显示选项：分类网格图层与指针处实时分类。 -->
+      <label class="checkbox">
+        <input type="checkbox" id="show-overlay" checked>
+        <span>Show zone classification layer</span>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="live-classify" checked>
+        <span>Live zone read-out while pointing at the chart</span>
+      </label>
+
+      <!-- Actions: plan one route (WebSocket, REST fallback), benchmark all
+           algorithms (POST /api/benchmark, result on the Compare tab), clear the
+           map. 操作按钮：规划、算法对比、清除。 -->
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-plan">Build route</button>
+        <button class="btn" id="btn-benchmark">Compare algorithms</button>
+        <button class="btn btn-ghost" id="btn-clear">Clear</button>
+      </div>
+
+      <!-- Live progress (hidden until a "started" frame arrives): stage name,
+           percentage of the current stage, bar and a detail line (cells classified,
+           nodes expanded, GA generation...). 实时进度块。 -->
+      <div class="progress-block" id="progress-block" hidden>
+        <div class="progress-head">
+          <span id="progress-stage">working…</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-rail"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-detail" id="progress-detail"></div>
+      </div>
+
+      <!-- Route summary (hidden until a result is rendered): metric tiles, zone
+           profile bar with legend, and export links whose href is set to
+           /api/export/{route_id}.{geojson|csv|pdf} by app.js.
+           结果摘要：指标、区域占比与导出链接。 -->
+      <div id="result-block" hidden>
+        <h2 class="section-title">Route summary</h2>
+        <div class="metric-grid" id="metric-grid"></div>
+        <h3 class="section-title">Zone profile</h3>
+        <div id="zone-bar" class="zone-bar"></div>
+        <div id="zone-legend" class="zone-legend"></div>
+        <div class="export-row">
+          <a class="btn btn-small" id="dl-geojson" download>GeoJSON</a>
+          <a class="btn btn-small" id="dl-csv" download>CSV</a>
+          <a class="btn btn-small" id="dl-pdf" download>PDF report</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------- DATA -->
+    <section class="tab-page" id="tab-data">
+      <!-- Upload of an AIS file (POST /api/upload). The <label> wraps a hidden
+           file input, so a click opens the file dialog; drag-and-drop is handled
+           in app.js. 上传 AIS 文件：点击或拖放。 -->
+      <h2 class="section-title">Load AIS data</h2>
+      <p class="muted">Upload a GeoJSON, CSV or JSON file of route points. The
+        points are classified by the network and stored in the database.</p>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept=".geojson,.json,.csv" hidden>
+        <span id="dropzone-text">Drop a file here or click to browse</span>
+      </label>
+      <!-- Load/validation report and class histogram of the upload, followed by
+           export links for the classified points (/api/export/points/{token}.*). -->
+      <div id="upload-report" class="report" hidden></div>
+      <div class="export-row" id="points-export" hidden>
+        <a class="btn btn-small" id="dl-points-geojson" download>Points GeoJSON</a>
+        <a class="btn btn-small" id="dl-points-csv" download>Points CSV</a>
+      </div>
+      <!-- Database counters from GET /api/statistics. 数据库统计。 -->
+      <h3 class="section-title">Database</h3>
+      <div id="db-stats" class="report"></div>
+    </section>
+
+    <!-- ------------------------------------------------- COMPARE -->
+    <section class="tab-page" id="tab-compare">
+      <!-- Comparison of the planned route with the great-circle baseline
+           (filled by renderComparison in app.js). 优化航线与大圆航线对比。 -->
+      <h2 class="section-title">Optimised vs shortest distance</h2>
+      <div id="compare-block" class="report">Build a route first.</div>
+      <!-- Benchmark table filled by the "Compare algorithms" button. 算法基准测试结果。 -->
+      <h3 class="section-title">Algorithm benchmark</h3>
+      <div id="benchmark-block" class="report">Run “Compare algorithms”.</div>
+    </section>
+
+    <!-- --------------------------------------------------- MODEL -->
+    <section class="tab-page" id="tab-model">
+      <!-- Model summary and test metrics from GET /api/model. 模型摘要与测试指标。 -->
+      <h2 class="section-title">Classification model</h2>
+      <div id="model-block" class="report">loading…</div>
+      <!-- Confusion matrix (Charts.confusionMatrix) and training curves
+           (Charts.trainingCurves). The canvas width/height attributes give its
+           CSS size; charts.js enlarges the pixel buffer for high-DPI screens. -->
+      <h3 class="section-title">Confusion matrix (test set)</h3>
+      <div id="confusion" class="confusion"></div>
+      <h3 class="section-title">Training curves</h3>
+      <canvas id="history-chart" width="360" height="170"></canvas>
+    </section>
+
+    <!-- ------------------------------------------------- HISTORY -->
+    <section class="tab-page" id="tab-history">
+      <!-- Stored routes from GET /api/routes?limit=25; clicking an item draws
+           that route on the map. 已存储航线列表，点击可在地图上显示。 -->
+      <h2 class="section-title">Stored routes</h2>
+      <button class="btn btn-small" id="btn-refresh-history">Refresh</button>
+      <div id="history-list" class="history-list"></div>
+    </section>
+  </aside>
+
+  <!-- -------------------------------------------------- map  海图区域 -->
+  <section class="map-wrap">
+    <!-- Leaflet map container, sized by CSS to fill .map-wrap. 地图容器。 -->
+    <div id="map"></div>
+    <!-- Floating zone legend, filled from GET /api/zones. 图例。 -->
+    <div class="map-legend" id="map-legend"></div>
+    <!-- Cursor read-out: coordinates under the pointer and, if the live
+         read-out is enabled, the zone class, confidence and depth/elevation
+         there. 指针位置坐标与实时分类结果。 -->
+    <div class="cursor-readout" id="cursor-readout">
+      <span class="coord">— , —</span>
+      <span class="zone">move the pointer over the chart</span>
+    </div>
+  </section>
+</main>
+
+<!-- Scripts, in dependency order: Leaflet (global L), api.js (Api,
+     LiveChannel), charts.js (Charts), then app.js, which uses all of them
+     and starts the application. Placed at the end of <body> so that every
+     element referenced by id already exists when app.js runs.
+     脚本按依赖顺序加载，放在 body 末尾以保证元素已存在。 -->
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

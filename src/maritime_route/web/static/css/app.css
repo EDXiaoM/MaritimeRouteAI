@@ -1,0 +1,325 @@
+/* ==========================================================================
+   Maritime Route Planner - user interface stylesheet
+   界面样式表：深色海图风格，响应式两栏布局。
+
+   Place in the application: the only project stylesheet of index.html; it is
+   loaded after vendor/leaflet/leaflet.css so that the rules at the end can
+   restyle Leaflet controls for the dark theme.
+   Organisation: design tokens (:root custom properties) first, then one
+   section per UI area in the order they appear on the page (top bar, layout,
+   tabs, fields, buttons, progress, metrics, zone bar, report, dropzone,
+   confusion matrix, history, map overlays, Leaflet overrides) and finally
+   the responsive breakpoint.
+   All colours are referenced through the variables below, except a few
+   one-off tints of status colours.
+   样式按页面区域分节，颜色统一通过 :root 变量引用。
+   ========================================================================== */
+/* ------------------------------------------------------ design tokens
+   CSS custom properties used throughout the sheet.
+   --bg / --bg-2 / --bg-3 : page, panel and card backgrounds (dark to lighter).
+   --line                 : borders and grid lines.
+   --text / --muted       : primary and secondary text.
+   --accent / --accent-2  : interactive blue and success teal.
+   --danger / --warn      : error red and warning amber.
+   --open-sea ... --coastline : zone colours; must stay identical to
+       ZONE_COLOURS in js/app.js and CLASS_COLOR_DARK in config.py.
+   设计变量：背景、文字、强调色以及四个区域颜色（需与 app.js、config.py 一致）。 */
+:root {
+  --bg:        #0e1621;
+  --bg-2:      #16212e;
+  --bg-3:      #1d2b3a;
+  --line:      #2a3c4f;
+  --text:      #e6edf5;
+  --muted:     #94a7bb;
+  --accent:    #4da3ff;
+  --accent-2:  #2a9d8f;
+  --danger:    #ef6461;
+  --warn:      #e9c46a;
+  --open-sea:     #3d7fb8;
+  --coastal-sea:  #7cc3e3;
+  --near-coast:   #d9b877;
+  --coastline:    #a9763f;
+  --radius: 9px;
+  --shadow: 0 6px 22px rgba(0, 0, 0, .35);
+}
+
+/* Global reset: padding and border are included in element widths. */
+* { box-sizing: border-box; }
+
+/* Full-height page so the map can fill the viewport; base font and colours. */
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+}
+
+/* ------------------------------------------------------------- top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 10px 18px;
+  background: linear-gradient(90deg, #12283f, #0e1621 70%);
+  border-bottom: 1px solid var(--line);
+}
+/* Logo (inline SVG anchor) and application title. 标志与标题。 */
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-icon {
+  width: 30px; height: 30px; fill: none;
+  stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.brand h1 { margin: 0; font-size: 17px; letter-spacing: .2px; }
+.brand p  { margin: 1px 0 0; font-size: 11.5px; color: var(--muted); }
+
+/* Status pills in the top bar (#ws-status, #model-pill). The modifier classes
+   are set by setStatus() in app.js: ok = green, wait = amber, bad = red.
+   状态标签：ok 绿色、wait 黄色、bad 红色。 */
+.status-cluster { display: flex; gap: 8px; align-items: center; }
+.pill {
+  font-size: 11px; padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--line); background: var(--bg-2); color: var(--muted);
+  white-space: nowrap;
+}
+.pill-ok   { color: #8ff0c0; border-color: #2f6b52; background: #14301f; }
+.pill-wait { color: var(--warn); border-color: #6b5a2f; background: #302a14; }
+.pill-bad  { color: #ffb4b2; border-color: #6b2f2f; background: #301414; }
+
+/* -------------------------------------------------------------- layout */
+/* Two-column grid: fixed 392 px control panel + map taking the rest.
+   The height subtracts the ~53 px top bar so the page itself does not scroll;
+   the panel scrolls internally.
+   两栏网格布局；高度减去顶栏高度，面板内部滚动。 */
+.layout {
+  display: grid; grid-template-columns: 392px 1fr;
+  height: calc(100vh - 53px);
+}
+.panel {
+  background: var(--bg-2); border-right: 1px solid var(--line);
+  overflow-y: auto; padding: 0 16px 28px;
+}
+.map-wrap { position: relative; }
+/* Leaflet needs an element with an explicit size: #map fills .map-wrap. */
+#map { position: absolute; inset: 0; background: #0a1420; }
+
+/* ---------------------------------------------------------------- tabs */
+/* Tab bar of the side panel. Sticky so it stays visible while the panel
+   scrolls. Only the .tab-page with class .active is displayed; the class is
+   switched by the tab handler in app.js.
+   选项卡栏吸顶；只有带 active 类的页面可见。 */
+.tabs {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: 2px; padding: 10px 0 0;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1; padding: 8px 4px; font-size: 12px; cursor: pointer;
+  background: transparent; color: var(--muted);
+  border: none; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-page { display: none; padding-top: 14px; }
+.tab-page.active { display: block; }
+
+/* -------------------------------------------------------------- fields */
+/* Small upper-case headings inside the panel. */
+.section-title {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .7px;
+  color: var(--muted); margin: 16px 0 8px; font-weight: 600;
+}
+/* Labelled form controls. The label <span> is a flex row so that a live
+   <output> value (resolution, speed) is right-aligned next to the caption. */
+.field { display: block; margin-bottom: 10px; }
+.field > span {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--muted); margin-bottom: 4px;
+}
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Dark-themed number inputs and drop-down; a visible outline on focus for
+   keyboard users. */
+input[type=number], select {
+  width: 100%; padding: 7px 9px; border-radius: var(--radius);
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--text);
+  font-size: 13px;
+}
+input[type=number]:focus, select:focus { outline: 2px solid var(--accent); border-color: transparent; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+output { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* Checkbox rows (overlay layer, live read-out). */
+.checkbox {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--muted); margin: 6px 0;
+}
+.checkbox input { accent-color: var(--accent); }
+
+/* Hint box above the coordinate inputs (#pick-hint). */
+.hint {
+  font-size: 12px; color: var(--muted); background: var(--bg-3);
+  border-left: 3px solid var(--accent); border-radius: 5px;
+  padding: 8px 10px; margin-bottom: 12px;
+}
+.hint b { color: var(--text); }
+.muted { color: var(--muted); font-size: 12px; }
+
+/* Preset voyage chips (Kiel -> Tallinn etc.). 预设航线按钮。 */
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 12px; }
+.preset-label { font-size: 11px; color: var(--muted); }
+.chip {
+  font-size: 11px; padding: 4px 9px; border-radius: 14px; cursor: pointer;
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--muted);
+}
+.chip:hover { color: var(--text); border-color: var(--accent); }
+
+/* ------------------------------------------------------------- buttons */
+/* Buttons. .btn is also used on <a> export links, hence text-decoration
+   none and inline-block. :disabled is applied while a job is running.
+   Variants: primary (filled accent), ghost (transparent), small. */
+.actions { display: flex; gap: 8px; margin: 14px 0 6px; flex-wrap: wrap; }
+.btn {
+  padding: 8px 13px; border-radius: var(--radius); cursor: pointer;
+  background: var(--bg-3); border: 1px solid var(--line); color: var(--text);
+  font-size: 12.5px; text-decoration: none; display: inline-block;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #062036; font-weight: 600; }
+.btn-primary:hover { background: #6fb6ff; }
+.btn-ghost { background: transparent; }
+.btn-small { padding: 5px 10px; font-size: 11.5px; }
+
+/* ------------------------------------------------------------ progress */
+/* Planning progress block (#progress-block), fed by WebSocket 'progress'
+   frames. The fill width is set from JavaScript; the short width transition
+   smooths the jumps between throttled frames (one per ~0.15 s).
+   进度条：宽度由 JS 设置，过渡动画平滑节流后的跳变。 */
+.progress-block {
+  margin: 12px 0; padding: 10px; border-radius: var(--radius);
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.progress-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+#progress-pct { color: var(--accent); font-variant-numeric: tabular-nums; }
+.progress-rail { height: 6px; border-radius: 3px; background: #0e1621; overflow: hidden; }
+.progress-fill {
+  height: 100%; width: 0%; border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width .18s ease-out;
+}
+.progress-detail { font-size: 11px; color: var(--muted); margin-top: 6px; min-height: 14px; }
+
+/* ------------------------------------------------------------- metrics */
+/* Route summary tiles built by metric() in app.js; two per row.
+   .good / .warn / .bad colour the value (e.g. detour ratio > 1.5 = warn). */
+.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.metric {
+  background: var(--bg-3); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 9px 10px;
+}
+.metric .label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.metric .value { font-size: 17px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.metric .value small { font-size: 11px; color: var(--muted); }
+.metric.good .value { color: #7fe3b0; }
+.metric.warn .value { color: var(--warn); }
+.metric.bad  .value { color: var(--danger); }
+
+/* ------------------------------------------------------------ zone bar */
+/* Stacked zone-profile bar (Charts.zoneBar): a flex row whose child <div>s
+   get percentage widths inline; overflow hidden clips the rounded corners. */
+.zone-bar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
+.zone-bar div { height: 100%; }
+.zone-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 7px; font-size: 11px; color: var(--muted); }
+.zone-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+
+/* Row of export links (GeoJSON / CSV / PDF, points export). */
+.export-row { display: flex; gap: 7px; margin-top: 13px; flex-wrap: wrap; }
+
+/* -------------------------------------------------------------- report */
+/* Generic card with a two-column key/value table, used for the upload
+   report, database statistics, comparison, benchmark and model panels.
+   Values (last column) are right-aligned with tabular digits.
+   .verdict is the coloured conclusion line of the great-circle comparison.
+   通用信息卡片：键值表格，数值右对齐。 */
+.report {
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px; font-size: 12px; color: var(--muted); margin-top: 6px;
+}
+.report table { width: 100%; border-collapse: collapse; }
+.report td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.report td:first-child { color: var(--muted); }
+.report td:last-child { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.report tr:last-child td { border-bottom: none; }
+.report h4 { margin: 8px 0 4px; color: var(--text); font-size: 12px; }
+.verdict { padding: 7px 9px; border-radius: 6px; margin-top: 8px; font-size: 11.5px; }
+.verdict.bad  { background: #33161a; color: #ffb9b7; border-left: 3px solid var(--danger); }
+.verdict.good { background: #143026; color: #93e8c1; border-left: 3px solid var(--accent-2); }
+
+/* ------------------------------------------------------------ dropzone */
+/* File drop area of the Data tab; .drag is added by app.js while a file is
+   dragged over it. 文件拖放区域。 */
+.dropzone {
+  display: flex; align-items: center; justify-content: center;
+  height: 82px; border: 1.5px dashed var(--line); border-radius: var(--radius);
+  color: var(--muted); font-size: 12.5px; cursor: pointer; text-align: center; padding: 8px;
+}
+.dropzone:hover, .dropzone.drag { border-color: var(--accent); color: var(--text); background: var(--bg-3); }
+
+/* ----------------------------------------------------------- confusion */
+/* Confusion matrix grid (Charts.confusionMatrix): each row is a grid with a
+   74 px label column and 4 equal columns, one per zone class. Cell
+   backgrounds are set inline from the row-normalised share.
+   混淆矩阵：标签列 74 px，其余 4 列对应四个区域类别。 */
+.confusion { display: grid; gap: 2px; font-size: 10px; }
+.confusion .cm-row { display: grid; grid-template-columns: 74px repeat(4, 1fr); gap: 2px; }
+.confusion .cm-cell {
+  padding: 5px 2px; text-align: center; border-radius: 3px;
+  background: var(--bg-3); color: var(--text); font-variant-numeric: tabular-nums;
+}
+.confusion .cm-head { background: transparent; color: var(--muted); font-size: 9px; }
+
+/* ------------------------------------------------------------- history */
+/* Stored-route list of the History tab; each item is clickable. */
+.history-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.history-item {
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 8px 10px; font-size: 11.5px; cursor: pointer;
+}
+.history-item:hover { border-color: var(--accent); }
+.history-item .row1 { display: flex; justify-content: space-between; color: var(--text); }
+.history-item .row2 { color: var(--muted); margin-top: 2px; }
+
+/* ----------------------------------------------------------- map extra */
+/* Floating boxes over the map: the zone legend (top right) and the cursor
+   read-out (bottom left). They are siblings of #map, so z-index 500 puts
+   them above Leaflet's map pane (z-index 400, which holds tiles, vectors,
+   markers and popups) but below Leaflet's control corners (z-index 1000).
+   地图浮层：z-index 500 高于 Leaflet 地图窗格(400)，低于控件(1000)。 */
+.map-legend, .cursor-readout {
+  position: absolute; z-index: 500;
+  background: rgba(14, 22, 33, .9); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px 11px; font-size: 11.5px;
+  box-shadow: var(--shadow); backdrop-filter: blur(3px);
+}
+.map-legend { top: 12px; right: 12px; }
+.map-legend div { display: flex; align-items: center; gap: 6px; margin: 2px 0; color: var(--muted); }
+.map-legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+.cursor-readout { bottom: 12px; left: 12px; display: flex; gap: 12px; align-items: center; }
+.cursor-readout .coord { color: var(--text); font-variant-numeric: tabular-nums; }
+.cursor-readout .zone { color: var(--muted); }
+
+/* Leaflet overrides for the dark theme. The container background is the
+   "sea" shown while tiles load or when none are available; it must be set
+   here and not drawn as a map layer (see the note in app.js).
+   Leaflet 深色主题覆盖；底色必须在此设置，而不是绘制为图层。 */
+.leaflet-container { background: #0a1420; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line);
+}
+.leaflet-popup-content { font-size: 12px; margin: 9px 11px; }
+.leaflet-bar a { background: var(--bg-2); color: var(--text); border-color: var(--line); }
+.leaflet-bar a:hover { background: var(--bg-3); }
+
+/* Narrow screens (tablets, phones): stack the panel above the map instead of
+   side by side. 窄屏时面板与地图上下排列。 */
+@media (max-width: 980px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 45vh 55vh; height: auto; }
+  .panel { border-right: none; border-bottom: 1px solid var(--line); }
+  .map-wrap { min-height: 55vh; }
+}

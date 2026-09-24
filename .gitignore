@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+data/raw/*.geojson
+data/processed/*.npz
+data/*.db
+data/*.db-wal
+data/*.db-shm
+outputs/*
+!outputs/.gitkeep
+.DS_Store
+
+# Thesis sources and generated documents are not part of the application.
+# 论文生成脚本与文档不属于程序仓库。
+build/
+docs/*.docx
+docs/screenshots/ui_02_progress_panel.png
+*.log

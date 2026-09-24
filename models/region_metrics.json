@@ -1,0 +1,62 @@
+{
+  "overall_accuracy": 0.9661628693886758,
+  "overall_water_land_errors": 74,
+  "n_test": 22165,
+  "regions": {
+    "North Europe (Baltic and North Sea)": {
+      "n_test": 4399,
+      "accuracy": 0.9820413730393271,
+      "water_land_errors": 10
+    },
+    "South China Sea": {
+      "n_test": 2796,
+      "accuracy": 0.9227467811158798,
+      "water_land_errors": 4
+    },
+    "Japan and North-West Pacific": {
+      "n_test": 2732,
+      "accuracy": 0.9875549048316252,
+      "water_land_errors": 4
+    },
+    "Southern Africa (Cape of Good Hope)": {
+      "n_test": 2440,
+      "accuracy": 0.9401639344262295,
+      "water_land_errors": 2
+    },
+    "Black Sea and Eastern Mediterranean": {
+      "n_test": 2420,
+      "accuracy": 0.9537190082644628,
+      "water_land_errors": 36
+    },
+    "Persian Gulf and Arabian Sea": {
+      "n_test": 2032,
+      "accuracy": 0.9773622047244095,
+      "water_land_errors": 7
+    },
+    "Red Sea and Gulf of Aden": {
+      "n_test": 1700,
+      "accuracy": 0.9988235294117647,
+      "water_land_errors": 0
+    },
+    "Central America (Caribbean coast)": {
+      "n_test": 1477,
+      "accuracy": 0.956668923493568,
+      "water_land_errors": 5
+    },
+    "Strait of Malacca and Andaman Sea": {
+      "n_test": 1275,
+      "accuracy": 0.9866666666666667,
+      "water_land_errors": 1
+    },
+    "Bay of Bengal": {
+      "n_test": 742,
+      "accuracy": 0.954177897574124,
+      "water_land_errors": 5
+    },
+    "Other (inland samples)": {
+      "n_test": 152,
+      "accuracy": 1.0,
+      "water_land_errors": 0
+    }
+  }
+}

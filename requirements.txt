@@ -1,0 +1,29 @@
+# Maritime Route Planner - runtime dependencies
+# 运行依赖。安装: pip install -r requirements.txt
+#
+# Versions below are the ones the project was developed and tested with.
+# Any patch-level newer release of the same minor version should work.
+
+# --- numerical core ---------------------------------------------------------
+numpy==2.4.4
+pandas==3.0.2
+scipy==1.17.1
+
+# --- machine learning -------------------------------------------------------
+torch==2.14.0                 # neural network (CPU build is sufficient)
+scikit-learn==1.8.0           # StandardScaler, BallTree, metrics
+joblib==1.5.3                 # scaler persistence
+
+# --- data input / output ----------------------------------------------------
+ijson==3.5.1                  # streaming GeoJSON parser for large files
+reportlab==4.4.10             # PDF voyage report
+pillow==12.2.0                # on-board chart tile rendering
+
+# --- web service ------------------------------------------------------------
+fastapi==0.141.1
+uvicorn[standard]==0.46.0
+websockets==17.1
+python-multipart==0.0.26      # file upload support
+
+# --- figures (training / reporting scripts only) ----------------------------
+matplotlib==3.10.9
