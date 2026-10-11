@@ -1,33 +1,40 @@
 """Cleaning of the labelled corpus before training.
 
 The labelled corpus contains points whose class contradicts the physical
-measurement stored with them. The most frequent case, pointed out by the
+measurements stored with them. The most frequent case, pointed out by the
 project supervisor, is a ``COASTAL_SEA`` (sea) point that lies several metres
 *above* sea level; the symmetric case is a land point (``NEAR_COAST`` or
 ``COASTLINE``) that lies below the sea surface. Such points teach the network
 something that is physically impossible, so they are removed before the
 dataset is split and the model is trained.
 
-The measurement used is ``noaa_depth`` - the NOAA/ETOPO relief value in
-metres, positive above sea level and negative below it. A tolerance
+Every point carries two independent height measurements, both in metres,
+positive above sea level and negative below it:
+
+* ``noaa_depth`` - the NOAA/ETOPO relief value;
+* ``elevation`` - the terrain elevation recorded by the data collector.
+
+Each measurement is checked separately and a point is removed if *either* of
+them contradicts the class. A tolerance
 (:data:`~maritime_route.config.LABEL_CHECK_TOLERANCE_M`, 5 m by default)
-absorbs tides and the vertical error of the relief model, so that a beach
+absorbs tides and the vertical error of the relief models, so that a beach
 point at +1 m labelled as coastal sea is *not* flagged.
 
-Four rules are applied; a point is removed if any of them fires:
-
 ======================  =============================================
-Rule                     Condition
+Rule                     Condition (for each measurement h)
 ======================  =============================================
-``sea_above_level``      class OPEN_SEA or COASTAL_SEA and depth > +tol
-``land_below_level``     class NEAR_COAST or COASTLINE and depth < -tol
+``sea_above_level``      class OPEN_SEA or COASTAL_SEA and h > +tol
+``land_below_level``     class NEAR_COAST or COASTLINE and h < -tol
 ======================  =============================================
 
-(the two rules are reported separately for each of the four classes, which
-gives four counters in the statistics).
+With the 5 m tolerance the rule removes 5 427 of the 156 838 points of the
+corpus delivered with the Aegean Sea extension and leaves 151 411 points,
+exactly the number of "clean" points stated by the supervisor for that
+corpus. Using ``noaa_depth`` alone would leave 332 more points.
 
-Points without any measurement are kept: the rule cannot be evaluated for
-them, and the feature extractor already marks the missing value explicitly.
+A missing measurement is simply not checked; a point without any
+measurement is kept, and the feature extractor marks the missing value
+explicitly.
 
 Main objects
 ------------
@@ -36,14 +43,16 @@ Main objects
 :func:`conflict_mask`
     The rule itself, as a boolean mask (also used for the sensitivity table).
 :func:`assign_regions`
-    Maps points to the ten sea regions of
+    Maps points to the eleven sea regions of
     :data:`~maritime_route.config.REGIONS`; also used for per-region
     statistics and evaluation.
 :class:`CleaningReport`
     Counts written to ``dataset_statistics.json``.
 
 数据清洗：删除类别与实测高程/水深相矛盾的样本（例如位于海平面以上数米的
-"近岸海"点，或位于海平面以下的陆地点）。容差 5 米用于吸收潮汐和高程模型误差。
+"近岸海"点，或位于海平面以下的陆地点）。noaa_depth 与 elevation 两个测量值分别检查，
+任意一个矛盾即删除；容差 5 米用于吸收潮汐和高程模型误差。新语料清洗后剩 151 411 点，
+与指导老师给出的数字一致。
 """
 from __future__ import annotations
 
@@ -81,6 +90,9 @@ class CleaningReport:
         "below sea level").
     removed_by_region:
         Number of removed points per geographic region.
+    removed_by_measure:
+        Which measurement revealed the conflict: ``noaa_depth_only``,
+        ``elevation_only`` or ``both``.
     sensitivity:
         How many points *would* be removed at other tolerances; reported in
         the thesis to justify the chosen value.
@@ -93,6 +105,7 @@ class CleaningReport:
     tolerance_m: float
     removed_by_class: Dict[str, int] = field(default_factory=dict)
     removed_by_region: Dict[str, int] = field(default_factory=dict)
+    removed_by_measure: Dict[str, int] = field(default_factory=dict)
     sensitivity: Dict[str, int] = field(default_factory=dict)
 
     @property
@@ -120,6 +133,7 @@ class CleaningReport:
             "tolerance_m": self.tolerance_m,
             "removed_by_class": self.removed_by_class,
             "removed_by_region": self.removed_by_region,
+            "removed_by_measure": self.removed_by_measure,
             "sensitivity": self.sensitivity,
         }
 
@@ -161,13 +175,56 @@ def assign_regions(latitude: np.ndarray, longitude: np.ndarray) -> np.ndarray:
     return out
 
 
-def conflict_mask(frame: pd.DataFrame, tolerance_m: float = LABEL_CHECK_TOLERANCE_M) -> np.ndarray:
-    """Boolean mask of points whose class contradicts their height/depth.
+#: Height measurements checked against the class, in this order.
+#: 与类别对照检查的两个高度测量值。
+MEASUREMENTS: Tuple[str, ...] = ("noaa_depth", "elevation")
+
+
+def measurement_conflicts(frame: pd.DataFrame, column: str,
+                          tolerance_m: float = LABEL_CHECK_TOLERANCE_M) -> np.ndarray:
+    """Boolean mask of points whose class contradicts one height measurement.
 
     Parameters
     ----------
     frame:
-        Validated corpus with ``class_code`` and ``noaa_depth`` columns.
+        Validated corpus with a ``class_code`` column.
+    column:
+        Name of the measurement column (``noaa_depth`` or ``elevation``);
+        metres, positive above sea level. A missing column or value never
+        produces a conflict.
+    tolerance_m:
+        Allowed deviation from sea level in metres.
+
+    Returns
+    -------
+    numpy.ndarray of bool
+        ``True`` where the measurement contradicts the class.
+
+    单个测量值与类别的矛盾掩码；缺失值不参与判断。
+    """
+    if column in frame:
+        height = pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=float)
+    else:
+        height = np.full(len(frame), np.nan)
+    cls = frame["class_code"].astype(str).to_numpy()
+    # NaN compares False with everything, so a missing value is never flagged.
+    # NaN 与任何数比较均为 False，因此缺失值不会被标记。
+    with np.errstate(invalid="ignore"):
+        sea_above = np.isin(cls, WATER_CLASSES) & (height > tolerance_m)
+        land_below = np.isin(cls, LAND_CLASSES) & (height < -tolerance_m)
+    return sea_above | land_below
+
+
+def conflict_mask(frame: pd.DataFrame, tolerance_m: float = LABEL_CHECK_TOLERANCE_M) -> np.ndarray:
+    """Boolean mask of points whose class contradicts their height/depth.
+
+    A point is flagged when *either* measurement of :data:`MEASUREMENTS`
+    contradicts its class (see :func:`measurement_conflicts`).
+
+    Parameters
+    ----------
+    frame:
+        Validated corpus with ``class_code`` and the measurement columns.
     tolerance_m:
         Allowed deviation from sea level in metres.
 
@@ -176,21 +233,12 @@ def conflict_mask(frame: pd.DataFrame, tolerance_m: float = LABEL_CHECK_TOLERANC
     numpy.ndarray of bool
         ``True`` for every point that should be removed.
 
-    返回类别与高程/水深矛盾的样本掩码（True 表示应删除）。
+    返回类别与高程/水深矛盾的样本掩码（任一测量值矛盾即为 True，表示应删除）。
     """
-    # (n,) metres, NaN where no measurement exists. 无测量值处为 NaN。
-    depth = pd.to_numeric(frame.get("noaa_depth"), errors="coerce").to_numpy(dtype=float)
-    cls = frame["class_code"].astype(str).to_numpy()
-    # Points without a measurement can never be flagged (they are kept).
-    # 无测量值的点不参与判断（保留）。
-    measured = ~np.isnan(depth)
-    is_water = np.isin(cls, WATER_CLASSES)
-    is_land = np.isin(cls, LAND_CLASSES)
-    # A sea point clearly above the water line, or a land point clearly below it.
-    # 海域点明显高于海平面，或陆地点明显低于海平面。
-    sea_above = is_water & measured & (depth > tolerance_m)
-    land_below = is_land & measured & (depth < -tolerance_m)
-    return sea_above | land_below
+    mask = np.zeros(len(frame), dtype=bool)
+    for column in MEASUREMENTS:
+        mask |= measurement_conflicts(frame, column, tolerance_m)
+    return mask
 
 
 def remove_label_conflicts(
@@ -218,7 +266,9 @@ def remove_label_conflicts(
 
     删除标注错误的样本并返回清洗报告。
     """
-    mask = conflict_mask(frame, tolerance_m)
+    by_depth = measurement_conflicts(frame, "noaa_depth", tolerance_m)
+    by_elevation = measurement_conflicts(frame, "elevation", tolerance_m)
+    mask = by_depth | by_elevation
     regions = assign_regions(frame["latitude"].to_numpy(), frame["longitude"].to_numpy())
 
     # Counts of the removed points by class and by region. 按类别与海域统计删除数。
@@ -232,6 +282,11 @@ def remove_label_conflicts(
         tolerance_m=float(tolerance_m),
         removed_by_class={c: int(removed_cls.get(c, 0)) for c in CLASS_NAMES},
         removed_by_region={str(k): int(v) for k, v in removed_reg.items()},
+        removed_by_measure={
+            "noaa_depth_only": int((by_depth & ~by_elevation).sum()),
+            "elevation_only": int((by_elevation & ~by_depth).sum()),
+            "both": int((by_depth & by_elevation).sum()),
+        },
         sensitivity={f"{t:g} m": int(conflict_mask(frame, t).sum()) for t in (0.0, 2.0, 5.0, 10.0, 20.0)},
     )
     cleaned = frame.loc[~mask].reset_index(drop=True)

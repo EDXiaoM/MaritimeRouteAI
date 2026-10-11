@@ -1,60 +1,65 @@
 {
-  "overall_accuracy": 0.9661628693886758,
-  "overall_water_land_errors": 74,
-  "n_test": 22165,
+  "overall_accuracy": 0.9694874955970412,
+  "overall_water_land_errors": 67,
+  "n_test": 22712,
   "regions": {
     "North Europe (Baltic and North Sea)": {
-      "n_test": 4399,
-      "accuracy": 0.9820413730393271,
-      "water_land_errors": 10
+      "n_test": 4533,
+      "accuracy": 0.9794837855724685,
+      "water_land_errors": 5
     },
     "South China Sea": {
-      "n_test": 2796,
-      "accuracy": 0.9227467811158798,
-      "water_land_errors": 4
+      "n_test": 2857,
+      "accuracy": 0.9345467273363668,
+      "water_land_errors": 5
     },
     "Japan and North-West Pacific": {
-      "n_test": 2732,
-      "accuracy": 0.9875549048316252,
-      "water_land_errors": 4
-    },
-    "Southern Africa (Cape of Good Hope)": {
-      "n_test": 2440,
-      "accuracy": 0.9401639344262295,
-      "water_land_errors": 2
-    },
-    "Black Sea and Eastern Mediterranean": {
-      "n_test": 2420,
-      "accuracy": 0.9537190082644628,
-      "water_land_errors": 36
-    },
-    "Persian Gulf and Arabian Sea": {
-      "n_test": 2032,
-      "accuracy": 0.9773622047244095,
-      "water_land_errors": 7
-    },
-    "Red Sea and Gulf of Aden": {
-      "n_test": 1700,
-      "accuracy": 0.9988235294117647,
-      "water_land_errors": 0
-    },
-    "Central America (Caribbean coast)": {
-      "n_test": 1477,
-      "accuracy": 0.956668923493568,
-      "water_land_errors": 5
-    },
-    "Strait of Malacca and Andaman Sea": {
-      "n_test": 1275,
-      "accuracy": 0.9866666666666667,
+      "n_test": 2747,
+      "accuracy": 0.991991263196214,
       "water_land_errors": 1
     },
+    "Southern Africa (Cape of Good Hope)": {
+      "n_test": 2353,
+      "accuracy": 0.9413514662133446,
+      "water_land_errors": 3
+    },
+    "Black Sea and Eastern Mediterranean": {
+      "n_test": 2072,
+      "accuracy": 0.9618725868725869,
+      "water_land_errors": 20
+    },
+    "Persian Gulf and Arabian Sea": {
+      "n_test": 2023,
+      "accuracy": 0.9772614928324271,
+      "water_land_errors": 4
+    },
+    "Red Sea and Gulf of Aden": {
+      "n_test": 1663,
+      "accuracy": 0.994588093806374,
+      "water_land_errors": 4
+    },
+    "Central America (Caribbean coast)": {
+      "n_test": 1433,
+      "accuracy": 0.9734822051639916,
+      "water_land_errors": 4
+    },
+    "Strait of Malacca and Andaman Sea": {
+      "n_test": 1315,
+      "accuracy": 0.9802281368821293,
+      "water_land_errors": 3
+    },
+    "Aegean Sea": {
+      "n_test": 868,
+      "accuracy": 0.9792626728110599,
+      "water_land_errors": 7
+    },
     "Bay of Bengal": {
-      "n_test": 742,
-      "accuracy": 0.954177897574124,
-      "water_land_errors": 5
+      "n_test": 689,
+      "accuracy": 0.9462989840348331,
+      "water_land_errors": 11
     },
     "Other (inland samples)": {
-      "n_test": 152,
+      "n_test": 159,
       "accuracy": 1.0,
       "water_land_errors": 0
     }

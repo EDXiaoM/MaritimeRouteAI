@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Example voyages in each of the ten sea regions of the corpus.
+"""Example voyages in each of the eleven sea regions of the corpus.
 
-The labelled corpus covers ten separate sea regions (``config.REGIONS``). This
+The labelled corpus covers eleven separate sea regions (``config.REGIONS``). This
 script plans one realistic port-to-port voyage inside every region and runs all
 five methods of the application on the same cost map:
 
@@ -16,14 +16,14 @@ It writes
 * ``docs/figures/regional_routes.json`` - the numbers used in the thesis
   (distance, cost, nodes or fitness evaluations, run time, gap of the GA to the
   optimum, whether the great circle crosses land);
-* ``docs/figures/fig_regional_routes.png`` - ten map panels, each showing the
+* ``docs/figures/fig_regional_routes.png`` - eleven map panels, each showing the
   classified lattice with the A*, genetic and great-circle routes.
 
 Usage::
 
     python scripts/regional_examples.py
 
-在十个海域各规划一条真实港口到港口的航线，在同一张代价图上运行 A*、Dijkstra、
+在十一个海域各规划一条真实港口到港口的航线，在同一张代价图上运行 A*、Dijkstra、
 遗传算法与大圆航线四种方法，输出数值结果（JSON）与十幅地图（PNG）。
 
 Before planning, the script asserts that both ports of every voyage fall into
@@ -56,11 +56,17 @@ from maritime_route.model.inference import ZoneClassifierService
 from maritime_route.routing.geodesy import great_circle_points
 from maritime_route.routing.planner import RoutePlanner
 
-#: One voyage per region: (region, voyage name, departure, destination).
+#: One voyage per region: (region, voyage name, departure, destination[, lattice
+#: step in degrees; the planner default of 0.25 when omitted]).
 #: Coordinates are the approaches of real ports. 每个海域一条航线（真实港口外锚地坐标）。
 VOYAGES = [
     ("North Europe (Baltic and North Sea)", "Rotterdam - Gdansk",
      (51.9500, 4.1400), (54.4000, 18.6600)),
+    # The Aegean is planned at 0.1 deg: at the default 0.25 deg a diagonal step
+    # between two water cells cuts across Attica, which is narrower than a cell.
+    # 爱琴海用 0.1°：默认 0.25° 时对角步会穿过比网格还窄的阿提卡半岛。
+    ("Aegean Sea", "Piraeus - Thessaloniki",
+     (37.9200, 23.5800), (40.5500, 22.8800), 0.1),
     ("Black Sea and Eastern Mediterranean", "Constanta - Batumi",
      (44.1700, 28.6600), (41.6500, 41.6300)),
     ("Red Sea and Gulf of Aden", "Suez - Djibouti",
@@ -85,7 +91,7 @@ VOYAGES = [
 METHODS = ("astar", "dijkstra", "genetic", "dynamic", "great_circle")
 
 
-def run_voyage(planner: RoutePlanner, start, end):
+def run_voyage(planner: RoutePlanner, start, end, resolution=None):
     """Plan one voyage with all five methods on one shared cost map.
 
     The lattice is built (and refined if a strait is too narrow) once by A*;
@@ -99,6 +105,8 @@ def run_voyage(planner: RoutePlanner, start, end):
         Planner with the trained classifier.
     start, end : tuple of float
         Departure and destination ``(lat, lon)``, degrees.
+    resolution : float, optional
+        Requested lattice step, degrees; the planner default when omitted.
 
     Returns
     -------
@@ -106,7 +114,7 @@ def run_voyage(planner: RoutePlanner, start, end):
         ``(plans, cost_map)`` - a dict method name -> RoutePlan, and the
         shared CostMap.
     """
-    _, cost_map = planner.plan(start, end, "astar")
+    _, cost_map = planner.plan(start, end, "astar", resolution)
     # Resolution actually used after any refinement; passed on so that the
     # per-method plans report the same lattice.
     resolution = cost_map.spec.resolution_deg
@@ -227,16 +235,19 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     planner = RoutePlanner(ZoneClassifierService.instance())
     records = []
-    # 5 x 2 panels on an A4-sized figure (inches). 5 行 2 列子图。
-    fig, axes = plt.subplots(5, 2, figsize=(8.3, 11.0))
-    for i, (region, name, start, end) in enumerate(VOYAGES):
+    # 4 x 3 panels on an A4-sized figure (inches): eleven voyages, the twelfth
+    # panel holds the legend. 4 行 3 列子图：11 条航线，第 12 格放图例。
+    fig, axes = plt.subplots(4, 3, figsize=(8.3, 10.2))
+    for i, (region, name, start, end, *rest) in enumerate(VOYAGES):
+        resolution = rest[0] if rest else None
         # Sanity check: both ends of the voyage lie inside the declared region.
         # 检查起终点确实位于所声明的海域内。
         assigned = assign_regions(np.array([start[0], end[0]]), np.array([start[1], end[1]]))
         assert all(r == region for r in assigned), (name, assigned)
         print(f"-> {region}: {name}", flush=True)
-        plans, cost_map = run_voyage(planner, start, end)
+        plans, cost_map = run_voyage(planner, start, end, resolution)
         row = {"region": region, "voyage": name, "start": list(start), "end": list(end),
+               "requested_resolution_deg": resolution,
                "grid": cost_map.spec.to_dict(), **summarise(plans)}
         records.append(row)
         a, g = row["astar"], row["genetic"]
@@ -251,14 +262,15 @@ def main() -> int:
                Line2D([], [], color="#ff9f1c", lw=1.6, ls="--", label="Genetic algorithm"),
                Line2D([], [], color="#d62728", lw=1.4, ls=":", label="Great circle")]
     handles += [Patch(color=CLASS_COLOR[c], label=c) for c in CLASS_NAMES]
-    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=7, frameon=False)
-    # Reserve the bottom 4.5 % of the figure for the shared legend.
-    fig.tight_layout(rect=(0, 0.045, 1, 1))
+    legend_ax = axes.flat[len(VOYAGES)]
+    legend_ax.axis("off")
+    legend_ax.legend(handles=handles, loc="center", ncol=1, fontsize=7.5, frameon=False)
+    fig.tight_layout()
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(FIGURE_DIR / "fig_regional_routes.png", dpi=200)
 
     gaps = [r["genetic_gap_pct"] for r in records if r["genetic_gap_pct"] is not None]
-    # Aggregates over the ten voyages. astar_dijkstra_equal_cost checks that
+    # Aggregates over the eleven voyages. astar_dijkstra_equal_cost checks that
     # the two exact methods agree on every voyage (they must: both are optimal).
     summary = {
         "voyages": records,

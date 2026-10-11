@@ -69,17 +69,19 @@ needed only to retrain or to use a different corpus.
 ```bash
 # 1. put the labelled corpus here:
 #    data/raw/merged.geojson
-python scripts/prepare_dataset.py            # ~15 s, cleaning + features, writes data/processed/
+python scripts/prepare_dataset.py            # ~16 s, cleaning + features, writes data/processed/
 python scripts/train_model.py                # ~5 min on CPU, writes models/
 python scripts/evaluate_regions.py           # optional: accuracy per sea region
 python scripts/benchmark_routing.py          # optional: 6 European voyages, all methods
-python scripts/regional_examples.py          # optional: 10 regional voyages + map figure
+python scripts/regional_examples.py          # optional: 11 regional voyages + map figure
 python scripts/make_figures.py               # optional: regenerate the figures
 ```
 
 `prepare_dataset.py` removes the points whose class contradicts their measured
-height or depth (5 075 points at the default tolerance of 5 m, set by
-`LABEL_CHECK_TOLERANCE_M` in `config.py`); pass `--no-clean` to keep them.
+height or depth. Both measurements of a point, `noaa_depth` and `elevation`, are
+checked; at the default tolerance of 5 m (`LABEL_CHECK_TOLERANCE_M` in
+`config.py`) 5 427 of the 156 838 points are removed and 151 411 remain. Pass
+`--no-clean` to keep them.
 
 `prepare_dataset.py` writes:
 
@@ -125,7 +127,7 @@ All tunable values live in `src/maritime_route/config.py`. The most useful ones:
 | `ROUTING.proximity_penalty` | 1.6 | extra cost of a water cell next to land |
 | `GENETIC.*` | see file | population size, generations, rates and seed of the genetic algorithm |
 | `LABEL_CHECK_TOLERANCE_M` | 5.0 | tolerance of the data-cleaning check, metres |
-| `REGIONS` | ten boxes | the sea regions used for per-region evaluation |
+| `REGIONS` | eleven boxes | the sea regions used for per-region evaluation |
 | `TRAINING.*` | see file | network size, epochs, learning rate, seed |
 | `SERVER.progress_interval_s` | 0.15 | minimum interval between progress frames |
 
@@ -163,7 +165,7 @@ selected manually in the layer control at the top-left corner of the map.
 | The status pill shows *reconnecting…* | the server was restarted; the client reconnects by itself with exponential back-off |
 | `Address already in use` | another process holds port 8000 — start with `--port 8081` |
 | Planning reports *no navigable path* | departure or destination is landlocked; the lattice is already refined and widened three times automatically |
-| Planning reports *lies on land* | the port is more than 60 km from any navigable cell, often because it lies outside the ten sea regions covered by the training data |
+| Planning reports *lies on land* | the port is more than 60 km from any navigable cell, often because it lies outside the eleven sea regions covered by the training data |
 | The genetic algorithm reports *no navigable route evolved* | the evolutionary search converged on a closed strait; use A\* |
 | The map is blank | no internet access — switch to *On-board chart (offline)* in the layer control |
 | `ModuleNotFoundError: maritime_route` | run the scripts from the project root, or set `PYTHONPATH=src` |

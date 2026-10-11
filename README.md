@@ -3,6 +3,8 @@
 **Application for constructing a maritime vessel's course based on neural-network
 classification of geographic zones.**
 
+Diploma project · Li Haoran · Brest State Technical University, Department of
+Intelligent Information Technologies · supervisor А.А. Козинский · 2026/27
 
 > Chinese version of this document: [README_zh.md](README_zh.md).
 > Step-by-step installation: [docs/INSTALL.md](docs/INSTALL.md).
@@ -53,38 +55,51 @@ generation counter of the genetic algorithm.
 All numbers below are produced by the scripts in `scripts/` and can be reproduced
 (section 6).
 
-**Data cleaning.** 5 075 of the 152 838 labelled points (3.32 %) carry a class that
-contradicts their measured height or depth — for example a "coastal sea" point
-lying several metres above sea level. They are removed before training
-(`src/maritime_route/data/cleaning.py`, tolerance ±5 m).
+**Corpus.** The second release of the labelled corpus, supplied by the
+supervisor, contains 156 838 points in eleven sea regions; it adds 4 000 points
+of the Aegean Sea (1 000 per class) to the first release.
 
-**Classifier** (22 165 held-out test points of the cleaned corpus):
+**Data cleaning.** 5 427 of the 156 838 labelled points (3.46 %) carry a class that
+contradicts their measured height or depth — for example a "coastal sea" point
+lying several metres above sea level. Both measurements of a point (`noaa_depth`
+and `elevation`) are checked, with a tolerance of ±5 m, and the conflicting
+points are removed before training (`src/maritime_route/data/cleaning.py`).
+151 411 points remain — exactly the number of clean points stated by the
+supervisor for this release.
+
+**Classifier** (22 712 held-out test points of the cleaned corpus):
 
 | Metric | Value |
 |---|---|
-| Accuracy | **96.62 %** |
-| Macro F1 / Cohen κ / macro ROC-AUC | 0.9660 / 0.9536 / 0.9982 |
-| Water ↔ land confusions (safety-critical errors) | 74 (0.33 %) |
-| Parameters / training time | 98 364 / 105 epochs, 4.5 min on a CPU |
+| Accuracy | **96.95 %** |
+| Macro F1 / Cohen κ / macro ROC-AUC | 0.9695 / 0.9582 / 0.9985 |
+| Water ↔ land confusions (safety-critical errors) | 67 (0.29 %) |
+| Parameters / training time | 98 364 / 97 epochs, 4.3 min on a CPU |
 
-Accuracy in each of the ten sea regions of the corpus is written to
-`models/region_metrics.json` (from 92.3 % in the South China Sea to 99.9 % in the
-Red Sea).
+Accuracy in each of the eleven sea regions of the corpus is written to
+`models/region_metrics.json` (from 93.5 % in the South China Sea to 99.5 % in the
+Red Sea; 97.9 % in the newly added Aegean Sea).
 
-**Routing** (6 voyages in European waters + 10 voyages, one in each sea region):
+**Routing** (6 voyages in European waters + 11 voyages, one in each sea region):
 
 | Result | Value |
 |---|---|
-| Great-circle routes that cross land | 16 of 16 |
-| Optimised routes that are navigable | 16 of 16 |
-| A\* vs Dijkstra vs dynamic programming | identical optimal cost on all 16 voyages; A\* expands 2.43× fewer nodes than Dijkstra on average |
-| Genetic algorithm | navigable route in 15 of 16 voyages; on average 1.1 % (regional) and 5.5 % (European) above the optimum |
-| Extra distance of a safe route | +16 % (European) and +22 % (regional) on average |
+| Great-circle routes that cross land | 17 of 17 |
+| Optimised routes that are navigable | 17 of 17 |
+| A\* vs Dijkstra vs dynamic programming | identical optimal cost on all 17 voyages; A\* expands 2.5× fewer nodes than Dijkstra on average |
+| Genetic algorithm | navigable route in 15 of 17 voyages; on average 1.1 % (regional) and 3.8 % (European) above the optimum |
+| Extra distance of a safe route | +17 % (European) and +28 % (regional) on average |
 
-The genetic algorithm fails on Rotterdam → Gdańsk: it converges on the Øresund,
-which the lattice closes by one cell, and cannot jump to the Great Belt that A\*
-finds. This is the known weakness of evolutionary search in maze-like terrain
-and is discussed in the thesis.
+The genetic algorithm fails on Rotterdam → Gdańsk, where it converges on the
+Øresund (which the lattice closes by one cell) and cannot jump to the Great Belt
+that A\* finds, and on Piraeus → Thessaloniki, where no individual finds a
+land-free passage among the Aegean islands. This is the known weakness of
+evolutionary search in maze-like terrain and is discussed in the thesis.
+
+The Aegean voyage is planned at 0.1° (the preset button selects it): at the
+default 0.25° a diagonal step of the lattice cuts across Attica, which is
+narrower than one cell. Some Aegean islands (Kea, Naxos, Skiathos) have no land
+sample in the corpus and are therefore classified as sea.
 
 ## 3. Requirements
 
@@ -121,7 +136,7 @@ installation of the CPU build of PyTorch, are in [docs/INSTALL.md](docs/INSTALL.
 
 1. Click the chart twice (departure, then destination), drag the markers, type
    coordinates, or press a **preset** (Kiel → Tallinn, Rotterdam → Lisbon,
-   Helsinki → Copenhagen, Odesa → Novorossiysk).
+   Helsinki → Copenhagen, Odesa → Novorossiysk, Piraeus → Thessaloniki).
 2. Choose the **search algorithm** (A\*, Dijkstra, genetic algorithm, dynamic
    programming or great circle), the lattice resolution and the service speed.
 3. Press **Build route** and watch the progress bar.
@@ -136,15 +151,16 @@ Every control is explained in [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
 ## 6. Reproducing the results
 
-The labelled corpus `merged.geojson` (116 MB) is too large for GitHub. Put it at
+The labelled corpus `merged.geojson` (119 MB, second release with the Aegean
+Sea) is too large for GitHub. Put it at
 `data/raw/merged.geojson` and run:
 
 ```bash
-python scripts/prepare_dataset.py     # ~15 s: cleaning, split, features  -> data/processed/
+python scripts/prepare_dataset.py     # ~16 s: cleaning, split, features  -> data/processed/
 python scripts/train_model.py         # ~5 min on a CPU                   -> models/
 python scripts/evaluate_regions.py    # accuracy per sea region           -> models/region_metrics.json
 python scripts/benchmark_routing.py   # 6 European voyages                -> docs/figures/routing_benchmark.json
-python scripts/regional_examples.py   # 10 regional voyages + map figure  -> docs/figures/regional_routes.json
+python scripts/regional_examples.py   # 11 regional voyages + map figure  -> docs/figures/regional_routes.json
 python scripts/make_figures.py        # all figures of the thesis         -> docs/figures/
 ```
 
@@ -177,7 +193,7 @@ MaritimeRouteAI/
 │   ├── export/                    GeoJSON / CSV / PDF writers
 │   └── web/                       FastAPI service, WebSocket, tiles, browser client
 ├── scripts/                       command-line tools (section 6) and run_server.py
-├── tests/                         79 automated tests (pytest)
+├── tests/                         86 automated tests (pytest)
 ├── models/                        trained weights, scaler, reference index, metadata
 ├── data/samples/                  sample AIS track
 └── docs/                          INSTALL.md, USER_GUIDE.md, figures, posters, screenshots
@@ -194,7 +210,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-All 79 tests must pass. Tests that need the trained model are skipped when
+All 86 tests must pass. Tests that need the trained model are skipped when
 `models/zone_classifier.pt` is missing.
 
 ## 9. Limitations
@@ -203,9 +219,9 @@ All 79 tests must pass. Tests that need the trained model are skipped when
   use official electronic navigational charts.
 * The cost model ignores weather, currents, tides, ice, traffic separation schemes
   and the draught of a particular vessel.
-* The corpus covers ten sea regions (North Europe, Black Sea and Eastern
-  Mediterranean, Red Sea, Persian Gulf and Arabian Sea, Bay of Bengal, Malacca
-  Strait, South China Sea, Japan, Southern Africa, Central America). Outside them
+* The corpus covers eleven sea regions (North Europe, Aegean Sea, Black Sea and
+  Eastern Mediterranean, Red Sea, Persian Gulf and Arabian Sea, Bay of Bengal,
+  Malacca Strait, South China Sea, Japan, Southern Africa, Central America). Outside them
   the classification is unreliable — for example the sea off Durban is classified
   as land.
 * A strait narrower than one lattice cell is found only after automatic

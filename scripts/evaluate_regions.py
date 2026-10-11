@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Accuracy of the trained classifier in each of the ten sea regions.
+"""Accuracy of the trained classifier in each of the eleven sea regions.
 
-The corpus was collected in ten separate sea regions (see
+The corpus was collected in eleven separate sea regions (see
 ``maritime_route.config.REGIONS``). A single overall accuracy can hide a
 region where the model is weak, so this script evaluates the held-out test
 split region by region and reports, for every region:
@@ -22,7 +22,7 @@ every test point as ``region_test``) and ``scripts/train_model.py``. The test
 features are already computed, so the script only standardises them and runs
 the network; it does not rebuild features.
 
-按十个海域分别评估测试集：样本数、准确率，以及对航行安全最关键的"水域↔陆地"误判数。
+按十一个海域分别评估测试集：样本数、准确率，以及对航行安全最关键的"水域↔陆地"误判数。
 """
 from __future__ import annotations
 

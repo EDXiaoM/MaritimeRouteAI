@@ -92,6 +92,7 @@
 
       <!-- Preset voyages: data-preset="startLat,startLon,endLat,endLon". A click
            fills the four inputs and zooms the map; planning is not started.
+           data-resolution: recommended lattice step (default 0.25°).
            预设航线：点击后填入坐标并缩放地图。 -->
       <div class="preset-row">
         <span class="preset-label">Presets</span>
@@ -99,6 +100,7 @@
         <button class="chip" data-preset="51.9500,4.1400,38.6900,-9.4000">Rotterdam → Lisbon</button>
         <button class="chip" data-preset="60.1699,24.9384,55.6761,12.5683">Helsinki → Copenhagen</button>
         <button class="chip" data-preset="46.5209,30.7727,44.7252,37.7930">Odesa → Novorossiysk</button>
+        <button class="chip" data-preset="37.9200,23.5800,40.5500,22.8800" data-resolution="0.1">Piraeus → Thessaloniki</button>
       </div>
 
       <!-- Search algorithm; option values are the names accepted by the server

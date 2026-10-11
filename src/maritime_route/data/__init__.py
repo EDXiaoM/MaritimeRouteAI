@@ -9,7 +9,7 @@ Modules
     normalises column names and drops rows with invalid coordinates.
 :mod:`~maritime_route.data.cleaning`
     Removes labelled points whose class contradicts their measured
-    height/depth, and assigns every point to one of the ten sea regions.
+    height/depth, and assigns every point to one of the eleven sea regions.
 :mod:`~maritime_route.data.features`
     Builds the label-free :class:`ReferenceIndex` and the 28-column feature
     matrix that is the input of the neural network.

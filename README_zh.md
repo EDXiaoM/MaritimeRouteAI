@@ -2,6 +2,7 @@
 
 **基于神经网络地理区域分类的海船航线构建应用程序**
 
+毕业设计 · Li Haoran · 布列斯特国立技术大学 智能信息技术教研室 · 指导老师 А.А. Козинский · 2026/27 学年
 
 > 英文版说明见 [README.md](README.md)；详细安装步骤见 [docs/INSTALL.md](docs/INSTALL.md)；完整使用手册见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
 
@@ -34,39 +35,44 @@
 
 以下数字都由 `scripts/` 中的脚本生成，可以复现（见第六节）。
 
-**数据清洗**：152,838 个带标签的点中，有 5,075 个（3.32%）的类别与实测高程/水深相矛盾，例如"近岸海"点位于海平面以上数米。训练前把它们删除（`src/maritime_route/data/cleaning.py`，容差 ±5 m）。
+**语料**：使用指导老师提供的第二版带标签语料，共 156,838 个点、覆盖十一个海域；它在第一版基础上新增了爱琴海的 4,000 个点（每类 1,000 个）。
 
-**分类模型**（清洗后语料中的 22,165 个独立测试点）：
+**数据清洗**：156,838 个点中，有 5,427 个（3.46%）的类别与实测高程/水深相矛盾，例如"近岸海"点位于海平面以上数米。每个点的两个测量值（`noaa_depth` 和 `elevation`）分别检查，容差 ±5 m，任一矛盾即在训练前删除（`src/maritime_route/data/cleaning.py`）。清洗后剩 151,411 个点，与指导老师给出的数字完全一致。
+
+**分类模型**（清洗后语料中的 22,712 个独立测试点）：
 
 | 指标 | 数值 |
 |---|---|
-| 准确率 | **96.62%** |
-| Macro F1 / Cohen κ / Macro ROC-AUC | 0.9660 / 0.9536 / 0.9982 |
-| 水域 ↔ 陆地误判（对航行安全最关键的错误） | 74 个（0.33%） |
-| 参数量 / 训练 | 98,364 个参数；CPU 上训练 105 轮，约 4.5 分钟 |
+| 准确率 | **96.95%** |
+| Macro F1 / Cohen κ / Macro ROC-AUC | 0.9695 / 0.9582 / 0.9985 |
+| 水域 ↔ 陆地误判（对航行安全最关键的错误） | 67 个（0.29%） |
+| 参数量 / 训练 | 98,364 个参数；CPU 上训练 97 轮，约 4.3 分钟 |
 
-十个海域各自的准确率写在 `models/region_metrics.json`，从南海的 92.3% 到红海的 99.9%。
+十一个海域各自的准确率写在 `models/region_metrics.json`，从南海的 93.5% 到红海的 99.5%；新增的爱琴海为 97.9%。
 
-**航线规划**（欧洲水域 6 条航线 + 十个海域各 1 条航线）：
+**航线规划**（欧洲水域 6 条航线 + 十一个海域各 1 条航线）：
 
 | 结果 | 数值 |
 |---|---|
-| 穿过陆地的大圆航线 | 16 条中 16 条 |
-| 可航行的优化航线 | 16 条中 16 条 |
-| A\*、Dijkstra、动态规划 | 16 条航线上最优代价完全相同；A\* 展开的节点平均比 Dijkstra 少 2.43 倍 |
-| 遗传算法 | 16 条中 15 条找到可航行航线；平均比最优解高 1.1%（十个海域）和 5.5%（欧洲） |
-| 安全航线多走的距离 | 平均 +16%（欧洲）、+22%（十个海域） |
+| 穿过陆地的大圆航线 | 17 条中 17 条 |
+| 可航行的优化航线 | 17 条中 17 条 |
+| A\*、Dijkstra、动态规划 | 17 条航线上最优代价完全相同；A\* 展开的节点平均比 Dijkstra 少 2.5 倍 |
+| 遗传算法 | 17 条中 15 条找到可航行航线；平均比最优解高 1.1%（十一个海域）和 3.8%（欧洲） |
+| 安全航线多走的距离 | 平均 +17%（欧洲）、+28%（十一个海域） |
 
-遗传算法在 Rotterdam → Gdańsk 上失败：它收敛到了厄勒海峡，而栅格在那里恰好差一个格子不通，无法跳到 A\* 找到的大贝尔特海峡。这是进化搜索在"迷宫式"地形中的已知弱点，论文中有讨论。
+遗传算法在两条航线上失败：Rotterdam → Gdańsk 收敛到了厄勒海峡（栅格在那里恰好差一个格子不通），无法跳到 A\* 找到的大贝尔特海峡；Piraeus → Thessaloniki 在爱琴海岛群中始终没有找到不穿越陆地的通道。这是进化搜索在"迷宫式"地形中的已知弱点，论文中有讨论。
 
-四条预设航线的实测结果（A\*，默认分辨率 0.25°，航速 14 节）：
+爱琴海航线使用 0.1° 网格（点预设按钮会自动选择）：默认 0.25° 时，网格的对角步会直接穿过比一个格子还窄的阿提卡半岛。另外，语料在爱琴海部分岛屿（如 Kea、Naxos、Skiathos）上没有任何陆地样本，因此模型会把它们判为海域。
+
+五条预设航线的实测结果（A\*，默认分辨率 0.25°，爱琴海为 0.1°，航速 14 节）：
 
 | 预设航线 | 优化航线 | 大圆距离 | 大圆航线在陆地上的比例 | 规划耗时 |
 |---|---|---|---|---|
-| Kiel → Tallinn | 1,226 km | 1,052 km | 39% | 约 0.4 s |
-| Rotterdam → Lisbon | 2,103 km | 1,809 km | 45% | 约 0.2 s |
-| Helsinki → Copenhagen | 1,146 km | 883 km | 33% | 约 2.3 s（自动加密到 0.1375°） |
-| Odesa → Novorossiysk | 759 km | 581 km | 58% | 约 0.2 s |
+| Kiel → Tallinn | 1,249 km | 1,052 km | 36% | 约 3 s（自动加密到 0.1375°） |
+| Rotterdam → Lisbon | 2,103 km | 1,809 km | 45% | 约 0.3 s |
+| Helsinki → Copenhagen | 1,152 km | 883 km | 33% | 约 0.3 s |
+| Odesa → Novorossiysk | 759 km | 581 km | 62% | 约 0.2 s |
+| Piraeus → Thessaloniki（爱琴海，0.1°） | 532 km | 299 km | 33% | 约 0.3 s |
 
 ## 三、运行环境
 
@@ -111,7 +117,7 @@ python scripts/run_server.py --host 0.0.0.0           # 允许局域网内其他
 
 ## 五、使用方法
 
-页面左侧是控制面板，右侧是地图。右上角两个状态标识：**live connection**（实时通道已连接）和 **model 96.6% acc**（已加载的模型及其准确率）。
+页面左侧是控制面板，右侧是地图。右上角两个状态标识：**live connection**（实时通道已连接）和 **model 96.9% acc**（已加载的模型及其准确率）。
 
 | 标签页 | 用途 |
 |---|---|
@@ -121,7 +127,7 @@ python scripts/run_server.py --host 0.0.0.0           # 允许局域网内其他
 | **Model** | 模型结构、测试指标、混淆矩阵、训练曲线 |
 | **History** | 数据库中已保存的航线，点击可重新显示 |
 
-1. **设置起终点**：在地图上点两次（先起点 A，后终点 B）、拖动标记、输入坐标，或点预设航线：Kiel → Tallinn、Rotterdam → Lisbon、Helsinki → Copenhagen、Odesa → Novorossiysk。
+1. **设置起终点**：在地图上点两次（先起点 A，后终点 B）、拖动标记、输入坐标，或点预设航线：Kiel → Tallinn、Rotterdam → Lisbon、Helsinki → Copenhagen、Odesa → Novorossiysk、Piraeus → Thessaloniki。
 2. **选择参数**：Search algorithm（A\* / Dijkstra / Genetic algorithm / Dynamic programming / Great circle）、Grid resolution（0.1°–1.0°，默认 0.25°）、Service speed（6–30 节，默认 14 节）。
 3. **点 Build route**：进度区依次显示建栅格 → 神经网络逐格分类 → 代价图完成 → 搜索（A\* 显示展开节点数，遗传算法显示代数和当前最优代价，动态规划显示价值迭代的轮数）→ Route ready。找不到航线时会自动加密并扩大栅格重试（最多 3 次）。
 4. **看结果**：地图上是按区域着色的优化航线和红色虚线的大圆航线；Route summary 给出长度、大圆距离、绕行系数、代价、航行时间、耗时、节点数。
@@ -133,14 +139,14 @@ python scripts/run_server.py --host 0.0.0.0           # 允许局域网内其他
 
 ## 六、复现实验结果
 
-数据集 `merged.geojson`（116 MB）超过 GitHub 的文件大小限制，没有放进仓库。把它放到 `data/raw/merged.geojson` 后依次运行：
+数据集 `merged.geojson`（119 MB，含爱琴海的第二版）超过 GitHub 的文件大小限制，没有放进仓库。把它放到 `data/raw/merged.geojson` 后依次运行：
 
 ```bash
-python scripts/prepare_dataset.py     # 约 15 秒：清洗、划分、特征        -> data/processed/
+python scripts/prepare_dataset.py     # 约 16 秒：清洗、划分、特征        -> data/processed/
 python scripts/train_model.py         # CPU 约 5 分钟                     -> models/
 python scripts/evaluate_regions.py    # 按海域统计准确率                  -> models/region_metrics.json
 python scripts/benchmark_routing.py   # 欧洲 6 条航线                     -> docs/figures/routing_benchmark.json
-python scripts/regional_examples.py   # 十个海域 10 条航线 + 地图         -> docs/figures/regional_routes.json
+python scripts/regional_examples.py   # 十一个海域 11 条航线 + 地图       -> docs/figures/regional_routes.json
 python scripts/make_figures.py        # 论文全部插图                      -> docs/figures/
 ```
 
@@ -153,7 +159,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-应显示 79 个测试全部通过。
+应显示 86 个测试全部通过。
 
 ## 八、目录结构
 
@@ -168,7 +174,7 @@ MaritimeRouteAI/
 │   ├── export/                    GeoJSON / CSV / PDF 导出
 │   └── web/                       FastAPI 服务、WebSocket、瓦片、浏览器前端
 ├── scripts/                       命令行工具（第六节）与 run_server.py
-├── tests/                         79 个自动化测试
+├── tests/                         86 个自动化测试
 ├── models/                        训练好的权重、标准化器、参考索引、元数据
 ├── data/samples/                  AIS 样例轨迹
 └── docs/                          安装说明、用户手册、插图、图纸、截图
@@ -184,7 +190,7 @@ MaritimeRouteAI/
 | `Address already in use` | 8000 端口被占用，改用 `--port 8081` |
 | 右上角显示 *reconnecting…* | 服务重启过，页面会自动重连 |
 | `503 Model weights not found` | `models/` 缺失，重新下载仓库，或按第六节重新训练 |
-| 提示 *lies on land* | 港口离最近的可航行格子超过 60 km，通常是因为它在训练数据覆盖的十个海域之外 |
+| 提示 *lies on land* | 港口离最近的可航行格子超过 60 km，通常是因为它在训练数据覆盖的十一个海域之外 |
 | 遗传算法提示 *no navigable route evolved* | 进化搜索卡在了不通的海峡，请改用 A\* |
 | `ModuleNotFoundError: maritime_route` | 没在项目根目录运行或没激活虚拟环境；也可设置 `PYTHONPATH=src` |
 
@@ -192,5 +198,5 @@ MaritimeRouteAI/
 
 - 本程序是决策支持工具，**不是**经过认证的航海系统，不使用官方电子海图；
 - 代价模型没有考虑天气、洋流、潮汐、冰情、分道通航制和具体船舶的吃水；
-- 语料覆盖十个海域（北欧、黑海和东地中海、红海、波斯湾和阿拉伯海、孟加拉湾、马六甲海峡、南海、日本、南部非洲、中美洲）；在这些海域之外分类不可靠，例如德班外海会被判为陆地；
+- 语料覆盖十一个海域（北欧、爱琴海、黑海和东地中海、红海、波斯湾和阿拉伯海、孟加拉湾、马六甲海峡、南海、日本、南部非洲、中美洲）；在这些海域之外分类不可靠，例如德班外海会被判为陆地；
 - 比一个格子还窄的海峡要靠自动加密栅格才能通过，最细到 0.04°。

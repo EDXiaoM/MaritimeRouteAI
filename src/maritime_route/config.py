@@ -13,7 +13,7 @@ Contents
   deployments can redirect all file I/O without editing code.
 * **Zone taxonomy** - the four classes predicted by the neural network, their
   descriptions, colours and traversal costs used by the route planner.
-* **Regions** - bounding boxes of the ten sea regions of the labelled corpus,
+* **Regions** - bounding boxes of the eleven sea regions of the labelled corpus,
   used for per-region statistics and evaluation.
 * **Feature extraction** - OSM column names and neighbourhood sizes used by
   :mod:`maritime_route.data.features`.
@@ -200,16 +200,20 @@ LABEL_CHECK_TOLERANCE_M: float = 5.0
 # --------------------------------------------------------------------------- #
 # Geographic regions of the corpus                                            #
 # --------------------------------------------------------------------------- #
-#: The labelled corpus was collected in ten separate sea regions. Each region
-#: is described by a bounding box (lat_min, lat_max, lon_min, lon_max); boxes
-#: are tested in order and the first match wins. Points outside every box
+#: The labelled corpus was collected in eleven separate sea regions (the
+#: Aegean Sea was added by the supervisor in the second release of the corpus).
+#: Each region is described by a bounding box (lat_min, lat_max, lon_min,
+#: lon_max); boxes are tested in order and the first match wins, so the Aegean
+#: box is placed before the larger Eastern Mediterranean box that contains it. Points outside every box
 #: (inland samples far from any of the seas) are reported as "Other".
 #: Units: decimal degrees (WGS84); lower bounds inclusive, upper bounds exclusive.
-#: 语料覆盖的十个海域，按经纬度范围划分，依次匹配，均不匹配者记为 Other。
+#: 语料覆盖的十一个海域（爱琴海为第二版语料新增），按经纬度范围划分，依次匹配
+#: （爱琴海范围排在包含它的东地中海范围之前），均不匹配者记为 Other。
 #: 单位为十进制度（WGS84）；下界包含，上界不包含。
 REGIONS: List[Tuple[str, Tuple[float, float, float, float]]] = [
     ("North Europe (Baltic and North Sea)",      (47.5, 68.0, -40.0, 33.0)),
     ("Red Sea and Gulf of Aden",                 (5.0, 30.0, 32.0, 52.0)),
+    ("Aegean Sea",                               (34.3, 41.3, 19.0, 31.0)),
     ("Black Sea and Eastern Mediterranean",      (29.0, 47.5, 19.0, 42.5)),
     ("Persian Gulf and Arabian Sea",             (5.0, 31.5, 48.0, 70.0)),
     ("Bay of Bengal",                            (10.0, 25.0, 78.0, 93.0)),

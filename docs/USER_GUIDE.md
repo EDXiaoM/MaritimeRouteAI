@@ -9,7 +9,7 @@ The header shows two indicators:
 * **live connection** — the real-time channel to the server is open. While it
   reads *reconnecting…* the application still works through ordinary HTTP
   requests, only without live progress.
-* **model 96.6% acc** — the loaded classifier and its test-set accuracy.
+* **model 96.9% acc** — the loaded classifier and its test-set accuracy.
 
 The window is split into the control panel (left) and the chart (right). The
 panel has five tabs: **Plan**, **Data**, **Compare**, **Model**, **History**.
@@ -27,7 +27,9 @@ Three equivalent ways:
   follow.
 * **Type the coordinates** into the four fields, or press one of the
   **preset** chips (Kiel → Tallinn, Rotterdam → Lisbon, Helsinki → Copenhagen,
-  Odesa → Novorossiysk).
+  Odesa → Novorossiysk, Piraeus → Thessaloniki). The Piraeus → Thessaloniki
+  preset also sets the grid resolution to 0.1°, which the island-dense Aegean
+  Sea needs; the other presets restore the default of 0.25°.
 
 ### 2.2 Choosing the parameters
 

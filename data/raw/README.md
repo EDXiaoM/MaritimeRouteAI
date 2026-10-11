@@ -2,7 +2,11 @@
 
 Place the labelled AIS corpus here as `merged.geojson`.
 
-It is not distributed inside the delivery archive because of its size (116 MB).
+The current corpus is the second release supplied by the supervisor: 156 838
+points in eleven sea regions (the first release plus 4 000 points of the Aegean
+Sea). After cleaning, 151 411 points remain.
+
+It is not distributed inside the delivery archive because of its size (119 MB).
 The application does **not** need it to run — a trained model ships in
 `models/`. The corpus is required only to rebuild the dataset and retrain:
 

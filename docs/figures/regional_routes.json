@@ -11,6 +11,7 @@
         54.4,
         18.66
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 47.95,
         "lat_max": 58.4,
@@ -23,42 +24,103 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 1965.7,
-        "total_cost": 3249.3,
-        "nodes_expanded": 3671,
-        "runtime_s": 0.029
+        "distance_km": 2038.9,
+        "total_cost": 3279.8,
+        "nodes_expanded": 3672,
+        "runtime_s": 0.027
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 1965.7,
-        "total_cost": 3249.3,
-        "nodes_expanded": 3945,
-        "runtime_s": 0.026
+        "distance_km": 2038.9,
+        "total_cost": 3279.8,
+        "nodes_expanded": 3964,
+        "runtime_s": 0.024
       },
       "genetic": {
         "feasible": false,
         "distance_km": 0.0,
         "total_cost": null,
         "nodes_expanded": 0,
-        "runtime_s": 0.93
+        "runtime_s": 0.448
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 1965.7,
-        "total_cost": 3249.3,
-        "nodes_expanded": 860992,
-        "runtime_s": 0.054
+        "distance_km": 2038.9,
+        "total_cost": 3279.8,
+        "nodes_expanded": 872446,
+        "runtime_s": 0.028
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 1003.3,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.005
       },
       "genetic_gap_pct": null,
-      "great_circle_land_share": 0.975,
-      "detour_pct": 95.92
+      "great_circle_land_share": 0.9688,
+      "detour_pct": 103.23
+    },
+    {
+      "region": "Aegean Sea",
+      "voyage": "Piraeus - Thessaloniki",
+      "start": [
+        37.92,
+        23.58
+      ],
+      "end": [
+        40.55,
+        22.88
+      ],
+      "requested_resolution_deg": 0.1,
+      "grid": {
+        "lat_min": 35.92,
+        "lat_max": 42.55,
+        "lon_min": 20.88,
+        "lon_max": 25.58,
+        "resolution_deg": 0.1,
+        "n_rows": 67,
+        "n_cols": 48,
+        "n_cells": 3216
+      },
+      "astar": {
+        "feasible": true,
+        "distance_km": 532.1,
+        "total_cost": 792.7,
+        "nodes_expanded": 874,
+        "runtime_s": 0.007
+      },
+      "dijkstra": {
+        "feasible": true,
+        "distance_km": 532.1,
+        "total_cost": 792.7,
+        "nodes_expanded": 1409,
+        "runtime_s": 0.008
+      },
+      "genetic": {
+        "feasible": false,
+        "distance_km": 0.0,
+        "total_cost": null,
+        "nodes_expanded": 0,
+        "runtime_s": 0.142
+      },
+      "dynamic": {
+        "feasible": true,
+        "distance_km": 532.1,
+        "total_cost": 792.7,
+        "nodes_expanded": 139389,
+        "runtime_s": 0.01
+      },
+      "great_circle": {
+        "feasible": false,
+        "distance_km": 298.6,
+        "total_cost": null,
+        "nodes_expanded": 160,
+        "runtime_s": 0.005
+      },
+      "genetic_gap_pct": null,
+      "great_circle_land_share": 0.3312,
+      "detour_pct": 78.19
     },
     {
       "region": "Black Sea and Eastern Mediterranean",
@@ -71,6 +133,7 @@
         41.65,
         41.63
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 39.65,
         "lat_max": 46.17,
@@ -83,31 +146,31 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 1184.0,
-        "total_cost": 1229.1,
-        "nodes_expanded": 490,
-        "runtime_s": 0.014
+        "distance_km": 1190.2,
+        "total_cost": 1249.2,
+        "nodes_expanded": 477,
+        "runtime_s": 0.005
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 1184.0,
-        "total_cost": 1229.1,
-        "nodes_expanded": 735,
-        "runtime_s": 0.014
+        "distance_km": 1190.2,
+        "total_cost": 1249.2,
+        "nodes_expanded": 759,
+        "runtime_s": 0.005
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1184.0,
-        "total_cost": 1229.1,
-        "nodes_expanded": 12161,
-        "runtime_s": 0.45
+        "distance_km": 1190.2,
+        "total_cost": 1249.2,
+        "nodes_expanded": 9681,
+        "runtime_s": 0.187
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 1184.0,
-        "total_cost": 1229.1,
-        "nodes_expanded": 40590,
-        "runtime_s": 0.015
+        "distance_km": 1190.2,
+        "total_cost": 1249.2,
+        "nodes_expanded": 46543,
+        "runtime_s": 0.009
       },
       "great_circle": {
         "feasible": false,
@@ -117,8 +180,8 @@
         "runtime_s": 0.009
       },
       "genetic_gap_pct": 0.0,
-      "great_circle_land_share": 0.025,
-      "detour_pct": 8.47
+      "great_circle_land_share": 0.0125,
+      "detour_pct": 9.04
     },
     {
       "region": "Red Sea and Gulf of Aden",
@@ -131,6 +194,7 @@
         11.6,
         43.14
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 9.6,
         "lat_max": 31.93,
@@ -143,42 +207,42 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 2507.4,
-        "total_cost": 3449.0,
-        "nodes_expanded": 668,
-        "runtime_s": 0.01
+        "distance_km": 2510.3,
+        "total_cost": 3405.2,
+        "nodes_expanded": 666,
+        "runtime_s": 0.006
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 2507.4,
-        "total_cost": 3449.0,
-        "nodes_expanded": 704,
-        "runtime_s": 0.008
+        "distance_km": 2510.3,
+        "total_cost": 3405.2,
+        "nodes_expanded": 696,
+        "runtime_s": 0.005
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 2495.7,
-        "total_cost": 3499.0,
-        "nodes_expanded": 10001,
-        "runtime_s": 0.261
+        "distance_km": 2497.2,
+        "total_cost": 3444.2,
+        "nodes_expanded": 19281,
+        "runtime_s": 0.37
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 2507.4,
-        "total_cost": 3449.0,
-        "nodes_expanded": 59175,
-        "runtime_s": 0.015
+        "distance_km": 2510.3,
+        "total_cost": 3405.2,
+        "nodes_expanded": 59250,
+        "runtime_s": 0.011
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 2313.3,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.011
+        "runtime_s": 0.006
       },
-      "genetic_gap_pct": 1.45,
+      "genetic_gap_pct": 1.15,
       "great_circle_land_share": 0.1375,
-      "detour_pct": 8.39
+      "detour_pct": 8.52
     },
     {
       "region": "Persian Gulf and Arabian Sea",
@@ -191,6 +255,7 @@
         24.8,
         66.97
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 22.8,
         "lat_max": 27.01,
@@ -206,38 +271,38 @@
         "distance_km": 1395.7,
         "total_cost": 1741.1,
         "nodes_expanded": 193,
-        "runtime_s": 0.006
+        "runtime_s": 0.004
       },
       "dijkstra": {
         "feasible": true,
         "distance_km": 1395.7,
         "total_cost": 1741.1,
-        "nodes_expanded": 530,
-        "runtime_s": 0.007
+        "nodes_expanded": 535,
+        "runtime_s": 0.004
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1396.2,
-        "total_cost": 1741.6,
-        "nodes_expanded": 8001,
-        "runtime_s": 0.216
+        "distance_km": 1420.5,
+        "total_cost": 1765.9,
+        "nodes_expanded": 12001,
+        "runtime_s": 0.207
       },
       "dynamic": {
         "feasible": true,
         "distance_km": 1395.7,
         "total_cost": 1741.1,
-        "nodes_expanded": 37937,
-        "runtime_s": 0.009
+        "nodes_expanded": 40484,
+        "runtime_s": 0.007
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 1201.0,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.005
       },
-      "genetic_gap_pct": 0.03,
-      "great_circle_land_share": 0.125,
+      "genetic_gap_pct": 1.43,
+      "great_circle_land_share": 0.1062,
       "detour_pct": 16.21
     },
     {
@@ -251,6 +316,7 @@
         22.25,
         91.8
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 11.1,
         "lat_max": 24.25,
@@ -263,42 +329,42 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 1659.4,
-        "total_cost": 1879.8,
+        "distance_km": 1658.5,
+        "total_cost": 1878.8,
         "nodes_expanded": 1151,
-        "runtime_s": 0.013
+        "runtime_s": 0.009
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 1659.4,
-        "total_cost": 1879.8,
-        "nodes_expanded": 2294,
-        "runtime_s": 0.017
+        "distance_km": 1658.5,
+        "total_cost": 1878.8,
+        "nodes_expanded": 2285,
+        "runtime_s": 0.012
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1653.6,
-        "total_cost": 1882.6,
-        "nodes_expanded": 14481,
-        "runtime_s": 0.289
+        "distance_km": 1653.3,
+        "total_cost": 1882.3,
+        "nodes_expanded": 17521,
+        "runtime_s": 0.223
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 1659.4,
-        "total_cost": 1879.8,
-        "nodes_expanded": 136125,
-        "runtime_s": 0.015
+        "distance_km": 1658.5,
+        "total_cost": 1878.8,
+        "nodes_expanded": 135575,
+        "runtime_s": 0.007
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 1585.9,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.006
       },
-      "genetic_gap_pct": 0.15,
+      "genetic_gap_pct": 0.19,
       "great_circle_land_share": 0.1437,
-      "detour_pct": 4.64
+      "detour_pct": 4.58
     },
     {
       "region": "Strait of Malacca and Andaman Sea",
@@ -311,6 +377,7 @@
         7.88,
         98.4
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": -0.74,
         "lat_max": 9.88,
@@ -323,42 +390,42 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 1083.9,
-        "total_cost": 2055.6,
-        "nodes_expanded": 648,
-        "runtime_s": 0.009
+        "distance_km": 1061.1,
+        "total_cost": 2010.6,
+        "nodes_expanded": 638,
+        "runtime_s": 0.007
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 1083.9,
-        "total_cost": 2055.6,
-        "nodes_expanded": 750,
-        "runtime_s": 0.009
+        "distance_km": 1061.1,
+        "total_cost": 2010.6,
+        "nodes_expanded": 731,
+        "runtime_s": 0.006
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1083.9,
-        "total_cost": 2055.6,
-        "nodes_expanded": 15521,
-        "runtime_s": 0.323
+        "distance_km": 1061.1,
+        "total_cost": 2010.6,
+        "nodes_expanded": 12321,
+        "runtime_s": 0.207
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 1083.9,
-        "total_cost": 2055.6,
-        "nodes_expanded": 58824,
-        "runtime_s": 0.01
+        "distance_km": 1061.1,
+        "total_cost": 2010.6,
+        "nodes_expanded": 56166,
+        "runtime_s": 0.007
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 949.9,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.005
       },
       "genetic_gap_pct": 0.0,
       "great_circle_land_share": 0.675,
-      "detour_pct": 14.1
+      "detour_pct": 11.7
     },
     {
       "region": "South China Sea",
@@ -371,6 +438,7 @@
         22.28,
         114.17
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 8.35,
         "lat_max": 24.28,
@@ -383,42 +451,42 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 1799.1,
-        "total_cost": 1919.3,
-        "nodes_expanded": 1040,
-        "runtime_s": 0.012
+        "distance_km": 1770.7,
+        "total_cost": 1871.4,
+        "nodes_expanded": 921,
+        "runtime_s": 0.008
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 1799.1,
-        "total_cost": 1919.3,
-        "nodes_expanded": 1811,
-        "runtime_s": 0.015
+        "distance_km": 1770.7,
+        "total_cost": 1871.4,
+        "nodes_expanded": 1813,
+        "runtime_s": 0.011
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1799.1,
-        "total_cost": 1919.3,
-        "nodes_expanded": 24081,
-        "runtime_s": 0.526
+        "distance_km": 1774.3,
+        "total_cost": 1875.0,
+        "nodes_expanded": 8481,
+        "runtime_s": 0.162
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 1799.1,
-        "total_cost": 1919.3,
-        "nodes_expanded": 117056,
-        "runtime_s": 0.012
+        "distance_km": 1770.7,
+        "total_cost": 1871.4,
+        "nodes_expanded": 114018,
+        "runtime_s": 0.008
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 1526.3,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.008
+        "runtime_s": 0.007
       },
-      "genetic_gap_pct": 0.0,
-      "great_circle_land_share": 0.3187,
-      "detour_pct": 17.87
+      "genetic_gap_pct": 0.19,
+      "great_circle_land_share": 0.3312,
+      "detour_pct": 16.01
     },
     {
       "region": "Japan and North-West Pacific",
@@ -431,6 +499,7 @@
         35.3,
         139.75
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 31.45,
         "lat_max": 37.3,
@@ -443,42 +512,42 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 727.0,
-        "total_cost": 730.2,
-        "nodes_expanded": 105,
-        "runtime_s": 0.005
+        "distance_km": 763.4,
+        "total_cost": 755.8,
+        "nodes_expanded": 136,
+        "runtime_s": 0.003
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 727.0,
-        "total_cost": 730.2,
-        "nodes_expanded": 381,
-        "runtime_s": 0.006
+        "distance_km": 763.4,
+        "total_cost": 755.8,
+        "nodes_expanded": 403,
+        "runtime_s": 0.004
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 738.1,
-        "total_cost": 730.8,
-        "nodes_expanded": 5361,
-        "runtime_s": 0.098
+        "distance_km": 764.8,
+        "total_cost": 757.1,
+        "nodes_expanded": 7281,
+        "runtime_s": 0.109
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 727.0,
-        "total_cost": 730.2,
-        "nodes_expanded": 22935,
-        "runtime_s": 0.007
+        "distance_km": 763.4,
+        "total_cost": 755.8,
+        "nodes_expanded": 24004,
+        "runtime_s": 0.004
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 600.6,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.005
       },
-      "genetic_gap_pct": 0.08,
-      "great_circle_land_share": 0.475,
-      "detour_pct": 21.05
+      "genetic_gap_pct": 0.18,
+      "great_circle_land_share": 0.4688,
+      "detour_pct": 27.11
     },
     {
       "region": "Southern Africa (Cape of Good Hope)",
@@ -491,6 +560,7 @@
         -33.03,
         27.92
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": -35.91,
         "lat_max": -31.03,
@@ -504,40 +574,40 @@
       "astar": {
         "feasible": true,
         "distance_km": 1150.0,
-        "total_cost": 1196.2,
-        "nodes_expanded": 308,
-        "runtime_s": 0.007
+        "total_cost": 1214.8,
+        "nodes_expanded": 303,
+        "runtime_s": 0.004
       },
       "dijkstra": {
         "feasible": true,
         "distance_km": 1150.0,
-        "total_cost": 1196.2,
-        "nodes_expanded": 612,
-        "runtime_s": 0.007
+        "total_cost": 1214.8,
+        "nodes_expanded": 562,
+        "runtime_s": 0.005
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 1246.0,
-        "total_cost": 1292.2,
-        "nodes_expanded": 7281,
-        "runtime_s": 0.167
+        "distance_km": 1162.1,
+        "total_cost": 1293.3,
+        "nodes_expanded": 8801,
+        "runtime_s": 0.169
       },
       "dynamic": {
         "feasible": true,
         "distance_km": 1150.0,
-        "total_cost": 1196.2,
-        "nodes_expanded": 42399,
-        "runtime_s": 0.009
+        "total_cost": 1214.8,
+        "nodes_expanded": 37800,
+        "runtime_s": 0.008
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 885.4,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.009
+        "runtime_s": 0.008
       },
-      "genetic_gap_pct": 8.03,
-      "great_circle_land_share": 0.8375,
+      "genetic_gap_pct": 6.46,
+      "great_circle_land_share": 0.975,
       "detour_pct": 29.89
     },
     {
@@ -551,6 +621,7 @@
         14.03,
         -83.37
       ],
+      "requested_resolution_deg": null,
       "grid": {
         "lat_min": 7.38,
         "lat_max": 16.03,
@@ -563,53 +634,53 @@
       },
       "astar": {
         "feasible": true,
-        "distance_km": 681.1,
-        "total_cost": 775.4,
-        "nodes_expanded": 248,
-        "runtime_s": 0.006
+        "distance_km": 681.0,
+        "total_cost": 810.8,
+        "nodes_expanded": 283,
+        "runtime_s": 0.004
       },
       "dijkstra": {
         "feasible": true,
-        "distance_km": 681.1,
-        "total_cost": 775.4,
-        "nodes_expanded": 557,
-        "runtime_s": 0.007
+        "distance_km": 681.0,
+        "total_cost": 810.8,
+        "nodes_expanded": 579,
+        "runtime_s": 0.005
       },
       "genetic": {
         "feasible": true,
-        "distance_km": 681.1,
-        "total_cost": 775.4,
-        "nodes_expanded": 9201,
-        "runtime_s": 0.159
+        "distance_km": 681.0,
+        "total_cost": 810.8,
+        "nodes_expanded": 7201,
+        "runtime_s": 0.13
       },
       "dynamic": {
         "feasible": true,
-        "distance_km": 681.1,
-        "total_cost": 775.4,
-        "nodes_expanded": 15456,
-        "runtime_s": 0.006
+        "distance_km": 681.0,
+        "total_cost": 810.8,
+        "nodes_expanded": 15571,
+        "runtime_s": 0.005
       },
       "great_circle": {
         "feasible": false,
         "distance_km": 639.0,
         "total_cost": null,
         "nodes_expanded": 160,
-        "runtime_s": 0.008
+        "runtime_s": 0.009
       },
       "genetic_gap_pct": 0.0,
-      "great_circle_land_share": 0.0312,
-      "detour_pct": 6.58
+      "great_circle_land_share": 0.0563,
+      "detour_pct": 6.56
     }
   ],
   "aggregate": {
-    "n_voyages": 10,
-    "astar_feasible": 10,
+    "n_voyages": 11,
+    "astar_feasible": 11,
     "genetic_feasible": 9,
-    "great_circle_crossing_land": 10,
-    "genetic_gap_mean_pct": 1.08,
-    "genetic_gap_max_pct": 8.03,
+    "great_circle_crossing_land": 11,
+    "genetic_gap_mean_pct": 1.07,
+    "genetic_gap_max_pct": 6.46,
     "dynamic_equal_cost": true,
     "astar_dijkstra_equal_cost": true,
-    "mean_detour_pct": 22.31
+    "mean_detour_pct": 28.28
   }
 }

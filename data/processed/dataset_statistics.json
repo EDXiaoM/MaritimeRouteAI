@@ -1,21 +1,21 @@
 {
-  "n_points": 147763,
+  "n_points": 151411,
   "class_distribution": {
     "OPEN_SEA": {
-      "count": 54701,
-      "share": 0.370194
+      "count": 55654,
+      "share": 0.367569
     },
     "COASTAL_SEA": {
-      "count": 36258,
-      "share": 0.245379
+      "count": 36981,
+      "share": 0.244242
     },
     "NEAR_COAST": {
-      "count": 29271,
-      "share": 0.198094
+      "count": 30245,
+      "share": 0.199754
     },
     "COASTLINE": {
-      "count": 27533,
-      "share": 0.186332
+      "count": 28531,
+      "share": 0.188434
     }
   },
   "bbox": {
@@ -25,58 +25,58 @@
     "lon_max": 168.31572475740424
   },
   "missing": {
-    "elevation": 2539,
+    "elevation": 6023,
     "noaa_depth": 314
   },
   "depth_by_class": {
     "COASTAL_SEA": {
-      "mean": -139.27528707537394,
-      "std": 586.2882966199052,
-      "p05": -98.1595282384657,
-      "p50": -28.000000000002665,
-      "p95": -1.995192521810532
+      "mean": -138.0127514303282,
+      "std": 580.5880764023759,
+      "p05": -98.49628357610709,
+      "p50": -29.000000000001776,
+      "p95": -2.0
     },
     "COASTLINE": {
-      "mean": 401.83784603543455,
-      "std": 469.43212165420283,
-      "p05": 8.325886464121627,
-      "p50": 210.23617553710938,
-      "p95": 1412.094305419908
+      "mean": 414.14986495190715,
+      "std": 473.435574788545,
+      "p05": 8.982446670532235,
+      "p50": 220.0303192138672,
+      "p95": 1414.3424072265625
     },
     "NEAR_COAST": {
-      "mean": 30.34078413657134,
-      "std": 106.51477200204823,
-      "p05": 0.44999998807907104,
-      "p50": 11.136966466903672,
-      "p95": 86.20999908447266
+      "mean": 29.97622393913468,
+      "std": 104.84104669101683,
+      "p05": 0.4850000090897083,
+      "p50": 11.22499990462111,
+      "p95": 84.4323246002193
     },
     "OPEN_SEA": {
-      "mean": -2353.6528069746964,
-      "std": 1813.6276001279118,
-      "p05": -5545.0,
-      "p50": -2173.073486328125,
-      "p95": -62.5000000000001
+      "mean": -2354.5638283483763,
+      "std": 1803.0714759776367,
+      "p05": -5544.0,
+      "p50": -2177.916259765625,
+      "p95": -64.0
     }
   },
   "n_sessions": 25,
   "raw": {
-    "n_points": 152838,
+    "n_points": 156838,
     "class_distribution": {
       "OPEN_SEA": {
-        "count": 55951,
-        "share": 0.36608
+        "count": 56951,
+        "share": 0.36312
       },
       "COASTAL_SEA": {
-        "count": 38092,
-        "share": 0.249231
+        "count": 39092,
+        "share": 0.249251
       },
       "NEAR_COAST": {
-        "count": 30952,
-        "share": 0.202515
+        "count": 31952,
+        "share": 0.203726
       },
       "COASTLINE": {
-        "count": 27843,
-        "share": 0.182173
+        "count": 28843,
+        "share": 0.183903
       }
     },
     "bbox": {
@@ -86,80 +86,86 @@
       "lon_max": 168.31572475740424
     },
     "missing": {
-      "elevation": 3566,
+      "elevation": 7066,
       "noaa_depth": 314
     },
     "depth_by_class": {
       "COASTAL_SEA": {
-        "mean": -131.34246000695376,
-        "std": 573.0968733647082,
-        "p05": -97.84188067393575,
-        "p50": -26.499999999999776,
+        "mean": -129.3530999387027,
+        "std": 565.8703697259817,
+        "p05": -97.97955608367914,
+        "p50": -27.0,
         "p95": 5.0
       },
       "COASTLINE": {
-        "mean": 397.20350068978127,
-        "std": 468.84887560837,
-        "p05": 1.8779999971434482,
-        "p50": 205.08037185674203,
-        "p95": 1406.4323120116503
+        "mean": 409.51658120226784,
+        "std": 472.94675971276035,
+        "p05": 3.267462182046142,
+        "p50": 215.95557403564132,
+        "p95": 1412.4772705078656
       },
       "NEAR_COAST": {
-        "mean": 27.806709256866966,
-        "std": 104.15149599294665,
-        "p05": -6.500000000000389,
-        "p50": 10.025000095369164,
-        "p95": 82.58456230163574
+        "mean": 27.53281993270162,
+        "std": 102.56363762427918,
+        "p05": -6.000691890716553,
+        "p50": 10.165422439575195,
+        "p95": 81.47000122070312
       },
       "OPEN_SEA": {
-        "mean": -2288.5018639033783,
-        "std": 1846.9336580177876,
-        "p05": -5544.0,
-        "p50": -2150.4334716796866,
-        "p95": -45.0
+        "mean": -2288.59298524808,
+        "std": 1836.7088971743713,
+        "p05": -5542.999999999989,
+        "p50": -2156.1849365233866,
+        "p95": -46.0
       }
     },
     "n_sessions": 28
   },
   "cleaning": {
-    "n_before": 152838,
-    "n_after": 147763,
-    "n_removed": 5075,
-    "share_removed": 0.033205,
+    "n_before": 156838,
+    "n_after": 151411,
+    "n_removed": 5427,
+    "share_removed": 0.034603,
     "tolerance_m": 5.0,
     "removed_by_class": {
-      "OPEN_SEA": 1250,
-      "COASTAL_SEA": 1834,
-      "NEAR_COAST": 1681,
-      "COASTLINE": 310
+      "OPEN_SEA": 1297,
+      "COASTAL_SEA": 2111,
+      "NEAR_COAST": 1707,
+      "COASTLINE": 312
     },
     "removed_by_region": {
-      "North Europe (Baltic and North Sea)": 1441,
-      "Central America (Caribbean coast)": 1101,
-      "Black Sea and Eastern Mediterranean": 841,
-      "Japan and North-West Pacific": 683,
-      "Southern Africa (Cape of Good Hope)": 382,
-      "South China Sea": 359,
-      "Strait of Malacca and Andaman Sea": 117,
+      "North Europe (Baltic and North Sea)": 1447,
+      "Central America (Caribbean coast)": 1102,
+      "Japan and North-West Pacific": 692,
+      "Black Sea and Eastern Mediterranean": 689,
+      "Southern Africa (Cape of Good Hope)": 386,
+      "South China Sea": 366,
+      "Strait of Malacca and Andaman Sea": 355,
+      "Aegean Sea": 223,
       "Bay of Bengal": 103,
-      "Persian Gulf and Arabian Sea": 30,
-      "Red Sea and Gulf of Aden": 17,
+      "Persian Gulf and Arabian Sea": 38,
+      "Red Sea and Gulf of Aden": 25,
       "Other (inland samples)": 1
     },
+    "removed_by_measure": {
+      "noaa_depth_only": 3900,
+      "elevation_only": 332,
+      "both": 1195
+    },
     "sensitivity": {
-      "0 m": 6698,
-      "2 m": 6216,
-      "5 m": 5075,
-      "10 m": 3923,
-      "20 m": 2516
+      "0 m": 7546,
+      "2 m": 6523,
+      "5 m": 5427,
+      "10 m": 4124,
+      "20 m": 2558
     }
   },
   "regions": {
     "North Europe (Baltic and North Sea)": {
-      "count": 29699,
+      "count": 29693,
       "classes": {
         "OPEN_SEA": 6333,
-        "COASTAL_SEA": 9796,
+        "COASTAL_SEA": 9790,
         "NEAR_COAST": 6616,
         "COASTLINE": 6954
       }
@@ -183,88 +189,97 @@
       }
     },
     "Strait of Malacca and Andaman Sea": {
-      "count": 8624,
+      "count": 8386,
       "classes": {
         "OPEN_SEA": 3329,
-        "COASTAL_SEA": 2329,
+        "COASTAL_SEA": 2091,
         "NEAR_COAST": 1743,
         "COASTLINE": 1223
       }
     },
     "Red Sea and Gulf of Aden": {
-      "count": 11170,
+      "count": 11162,
       "classes": {
         "OPEN_SEA": 1782,
-        "COASTAL_SEA": 3457,
-        "NEAR_COAST": 3153,
+        "COASTAL_SEA": 3452,
+        "NEAR_COAST": 3150,
         "COASTLINE": 2778
       }
     },
     "Black Sea and Eastern Mediterranean": {
-      "count": 15865,
+      "count": 13670,
       "classes": {
-        "OPEN_SEA": 5159,
-        "COASTAL_SEA": 3496,
-        "NEAR_COAST": 3696,
-        "COASTLINE": 3514
+        "OPEN_SEA": 4704,
+        "COASTAL_SEA": 2864,
+        "NEAR_COAST": 2905,
+        "COASTLINE": 3197
       }
     },
     "Persian Gulf and Arabian Sea": {
-      "count": 13359,
+      "count": 13351,
       "classes": {
         "OPEN_SEA": 6147,
-        "COASTAL_SEA": 2549,
-        "NEAR_COAST": 2274,
+        "COASTAL_SEA": 2548,
+        "NEAR_COAST": 2267,
         "COASTLINE": 2389
       }
     },
+    "Aegean Sea": {
+      "count": 6124,
+      "classes": {
+        "OPEN_SEA": 1413,
+        "COASTAL_SEA": 1615,
+        "NEAR_COAST": 1781,
+        "COASTLINE": 1315
+      }
+    },
     "Central America (Caribbean coast)": {
-      "count": 9722,
+      "count": 9721,
       "classes": {
         "OPEN_SEA": 2468,
-        "COASTAL_SEA": 1937,
+        "COASTAL_SEA": 1936,
         "NEAR_COAST": 2860,
         "COASTLINE": 2457
       }
     },
     "South China Sea": {
-      "count": 19449,
+      "count": 19442,
       "classes": {
-        "OPEN_SEA": 11521,
-        "COASTAL_SEA": 4033,
+        "OPEN_SEA": 11516,
+        "COASTAL_SEA": 4031,
         "NEAR_COAST": 2310,
         "COASTLINE": 1585
       }
     },
     "Southern Africa (Cape of Good Hope)": {
-      "count": 15774,
+      "count": 15770,
       "classes": {
         "OPEN_SEA": 5563,
-        "COASTAL_SEA": 5231,
+        "COASTAL_SEA": 5227,
         "NEAR_COAST": 3128,
         "COASTLINE": 1852
       }
     },
     "Japan and North-West Pacific": {
-      "count": 18434,
+      "count": 18425,
       "classes": {
         "OPEN_SEA": 11137,
-        "COASTAL_SEA": 2332,
-        "NEAR_COAST": 2291,
+        "COASTAL_SEA": 2329,
+        "NEAR_COAST": 2285,
         "COASTLINE": 2674
       }
     }
   },
   "split": {
-    "train": 103434,
-    "validation": 22164,
-    "test": 22165,
+    "train": 105987,
+    "validation": 22712,
+    "test": 22712,
     "features": 28
   },
   "load_report": {
     "source": "/home/claude/work/MaritimeRouteAI/data/raw/merged.geojson",
-    "n_features": 152838,
-    "n_valid": 152838,
+    "n_features": 156838,
+    "n_valid": 156838,
     "n_dropped": 0,
     "labelled": true,
     "columns": [

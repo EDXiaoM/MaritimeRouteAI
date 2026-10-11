@@ -730,14 +730,20 @@ els.speed.addEventListener('input', () => {
 /**
  * Preset voyage chips: data-preset="startLat,startLon,endLat,endLon".
  * Fills the inputs, redraws the markers and zooms to both ports with 40 %
- * padding. Planning is not started automatically.
- * 预设航线按钮：填入坐标并缩放地图，不自动规划。
+ * padding. Planning is not started automatically. An optional
+ * data-resolution sets the lattice step recommended for that voyage (the
+ * island-dense Aegean Sea needs 0.1°, see subsection 3.5.5 of the thesis);
+ * the other presets restore the default of 0.25°.
+ * 预设航线按钮：填入坐标并缩放地图，不自动规划；data-resolution 给出该航线推荐的
+ * 网格分辨率（岛屿密集的爱琴海需要 0.1°），其余预设恢复默认 0.25°。
  */
 document.querySelectorAll('.chip[data-preset]').forEach((chip) => {
   chip.addEventListener('click', () => {
     const [a, b, c, d] = chip.dataset.preset.split(',').map(Number);
     els.startLat.value = a; els.startLon.value = b;
     els.endLat.value = c;   els.endLon.value = d;
+    els.resolution.value = chip.dataset.resolution || '0.25';
+    els.resolution.dispatchEvent(new Event('input'));     // refresh the label
     readEndpointsFromInputs();
     map.fitBounds(L.latLngBounds([[a, b], [c, d]]).pad(0.4));
   });
