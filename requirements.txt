@@ -14,6 +14,9 @@ torch==2.14.0                 # neural network (CPU build is sufficient)
 scikit-learn==1.8.0           # StandardScaler, BallTree, metrics
 joblib==1.5.3                 # scaler persistence
 
+# --- independent coastline check of every route ----------------------------
+global-land-mask==1.0.0       # 1 km GLOBE land mask (routing/coast_check.py)
+
 # --- data input / output ----------------------------------------------------
 ijson==3.5.1                  # streaming GeoJSON parser for large files
 reportlab==4.4.10             # PDF voyage report

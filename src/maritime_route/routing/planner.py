@@ -20,7 +20,12 @@ request it performs:
    a cell, or a passage outside the box), the lattice is made finer and wider
    and the whole procedure is repeated (up to :attr:`RoutePlanner.MAX_REFINEMENTS`
    times).
-6. **Post-processing** - the path is anchored on the exact port coordinates,
+6. **Coastline check** - the route is sampled every kilometre against an
+   independent 1 km land mask (:mod:`.coast_check`). If it crosses land, the
+   offending cells are made impassable and the search is repeated; if that
+   does not help, the lattice is refined; a route that still crosses land is
+   returned with a warning.
+7. **Post-processing** - the path is anchored on the exact port coordinates,
    optionally simplified (Douglas-Peucker), turned into a waypoint table
    (:class:`RouteLeg`) and compared with the great-circle route.
 
@@ -54,6 +59,7 @@ from ..config import (
     ZONE_COST,
     RoutingConfig,
 )
+from . import coast_check as coastline
 from .astar import SearchResult, astar
 from .cost_map import CostMap, GridSpec, build_cost_map, make_grid_spec, nearest_navigable
 from .dijkstra import dijkstra
@@ -174,6 +180,13 @@ class RoutePlan:
         False when no navigable route was found.
     message : str
         Outcome text for the UI.
+    coast_check : dict
+        Result of the independent coastline check
+        (:meth:`~.coast_check.CoastCheck.to_dict`): verdict, longest land
+        stretch, number of automatic corrections and the land points.
+    warning : str
+        Non-empty when the route still crosses land after the automatic
+        corrections; shown in the UI and in the PDF report.
     """
 
     route_id: str
@@ -203,6 +216,10 @@ class RoutePlan:
     interior_land_waypoints: int = 0
     feasible: bool = True
     message: str = ""
+    #: Independent coastline check (see :mod:`.coast_check`). 独立海岸线检查结果。
+    coast_check: Dict = field(default_factory=dict)
+    #: Warning for the navigator; empty when the route passed the check.
+    warning: str = ""
 
     def to_dict(self) -> Dict:
         """JSON-ready dictionary of the whole plan.
@@ -274,8 +291,10 @@ class RoutePlanner:
         progress: ProgressCallback = None,
         reuse_cost_map: Optional[CostMap] = None,
         auto_refine: bool = True,
+        coast_guard: bool = True,
         _attempt: int = 0,
         _margin_deg: Optional[float] = None,
+        _coast_initial: Optional[Dict] = None,
     ) -> Tuple[RoutePlan, CostMap]:
         """Plan a route between two coordinates. 规划从起点到终点的航线。
 
@@ -309,10 +328,18 @@ class RoutePlanner:
             one map.
         auto_refine : bool, default True
             Allow the finer/wider retry on failure.
+        coast_guard : bool, default True
+            Check the route against the independent land mask and correct it
+            automatically when it crosses land (:meth:`_coast_guard`). With
+            ``reuse_cost_map`` the route is only checked, not corrected, so
+            that the benchmark compares all methods on one unchanged map.
         _attempt : int
             Internal: refinement depth of this call.
         _margin_deg : float, optional
             Internal: margin override set by :meth:`_refine`.
+        _coast_initial : dict, optional
+            Internal: coastline check of the first route when this call is a
+            refinement made because of the coastline check.
 
         Returns
         -------
@@ -371,7 +398,8 @@ class RoutePlanner:
         if start_cell is None or goal_cell is None:
             # No water near a port: try a finer lattice, else report infeasible.
             retry = self._refine(start, end, algorithm, config, speed_knots, simplify_km,
-                                 progress, auto_refine, _attempt, reuse_cost_map)
+                                 progress, auto_refine, _attempt, reuse_cost_map,
+                                 coast_guard, _coast_initial)
             if retry is not None:
                 return retry
             return (self._infeasible(start, end, algorithm, great_circle_km, cost_map,
@@ -383,21 +411,12 @@ class RoutePlanner:
         if progress:
             progress("search", 0.0, {"stage": f"Running {algorithm.upper()} search"})
 
-        if algorithm == "dijkstra":
-            result = dijkstra(cost_map, start_cell, goal_cell, config, progress=progress)
-        elif algorithm == "genetic":
-            # The GA uses its own GeneticConfig defaults (GENETIC); the routing
-            # config does not apply to it.
-            result = genetic(cost_map, start_cell, goal_cell, progress=progress)
-        elif algorithm == "dynamic":
-            # Dynamic programming: value iteration on the Bellman equation.
-            # 动态规划：在贝尔曼方程上做价值迭代。
-            result = dynamic_programming(cost_map, start_cell, goal_cell, progress=progress)
-        elif algorithm == "great_circle":
+        if algorithm not in ("dijkstra", "genetic", "dynamic", "great_circle"):
+            algorithm = "astar"
+        if algorithm == "great_circle":
             result = self._great_circle_result(cost_map, start, end)
         else:
-            algorithm = "astar"
-            result = astar(cost_map, start_cell, goal_cell, config, progress=progress)
+            result = self._search(algorithm, cost_map, start_cell, goal_cell, config, progress)
 
         # ---- 5. refinement on failure ----------------------------------- #
         if not result.found:
@@ -410,7 +429,8 @@ class RoutePlanner:
             retry = None
             if lattice_blocked:
                 retry = self._refine(start, end, algorithm, config, speed_knots, simplify_km,
-                                     progress, auto_refine, _attempt, reuse_cost_map)
+                                     progress, auto_refine, _attempt, reuse_cost_map,
+                                 coast_guard, _coast_initial)
             if retry is not None:
                 return retry
             return (self._infeasible(start, end, algorithm, great_circle_km, cost_map,
@@ -418,15 +438,37 @@ class RoutePlanner:
                                      result.message + " at the finest lattice tried "
                                      f"({spec.resolution_deg}°)"), cost_map)
 
-        # ---- 6. post-processing ----------------------------------------- #
-        coords = list(result.path_coords)
-        # Anchor the poly-line on the exact user coordinates.
-        # The search starts and ends at the snapped cell centres; replacing the
-        # first and last vertex draws the route from/to the actual quay.
-        # 用用户输入的精确坐标替换首尾网格点。
-        coords[0], coords[-1] = start, end
+        # ---- 6. independent coastline check ----------------------------- #
+        # The route is optimal on the classified lattice; the land mask, which
+        # plays no part in the classification, checks it against reality.
+        # 用与分类器无关的陆地掩膜检查航线，穿陆时自动修正。
+        search_map = cost_map
+        coast = coastline.check_route(self._anchored(result, start, end), approach=True)
+        corrections, blocked = 0, 0
+        initial = _coast_initial or coast.to_dict()
+        if (coast.verdict == "crossing" and coast_guard and reuse_cost_map is None
+                and algorithm != "great_circle"):
+            result, search_map, coast, corrections, blocked = self._coast_guard(
+                algorithm, result, cost_map, start_cell, goal_cell, config, start, end,
+                coast, progress)
+            if coast.verdict == "crossing" and auto_refine:
+                # Blocking cells did not help (or closed the passage): plan the
+                # voyage again on a finer lattice, which checks itself again.
+                # 封锁网格无效时，在更细的网格上重新规划（新规划同样会自检）。
+                retry = self._refine_for_coast(start, end, algorithm, config, speed_knots,
+                                               simplify_km, progress, _attempt, initial)
+                if retry is not None and retry[0].feasible and (
+                        retry[0].coast_check.get("verdict") != "crossing"
+                        or retry[0].coast_check.get("max_land_run_km", 1e9)
+                        < coast.max_land_run_km):
+                    return retry
+
+        # ---- 7. post-processing ----------------------------------------- #
+        coords = self._anchored(result, start, end)
         if simplify_km > 0:
             coords = douglas_peucker(coords, simplify_km)
+            # The simplified line may cut a corner the lattice path went round.
+            coast = coastline.check_route(coords, approach=True)
 
         legs = self._build_legs(coords, cost_map)
         distance_km = path_length_km(coords)
@@ -470,7 +512,239 @@ class RoutePlanner:
             feasible=True,
             message=result.message,
         )
-        return plan, cost_map
+        refined = _coast_initial is not None
+        plan.coast_check = coast.to_dict(corrections=corrections, refined=refined,
+                                         cells_blocked=blocked,
+                                         initial=initial.get("verdict"))
+        plan.coast_check["initial_max_land_run_km"] = initial.get("max_land_run_km", 0.0)
+        plan.message, plan.warning = self._coast_messages(plan, algorithm)
+        # The map returned is the one the route was found on (with the cells
+        # blocked by the coastline check), so that the overlay matches the route.
+        return plan, search_map
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _anchored(result: SearchResult, start: Coordinate, end: Coordinate) -> List[Coordinate]:
+        """Route poly-line of a search result drawn from/to the exact ports.
+
+        The search starts and ends at the snapped cell centres; replacing the
+        first and last vertex draws the route from/to the actual quay.
+        用用户输入的精确坐标替换首尾网格点。
+        """
+        coords = list(result.path_coords)
+        coords[0], coords[-1] = start, end
+        return coords
+
+    @staticmethod
+    def _search(algorithm: str, cost_map: CostMap, start_cell, goal_cell,
+                config: RoutingConfig, progress: ProgressCallback) -> SearchResult:
+        """Run one lattice search method on ``cost_map``.
+
+        Parameters
+        ----------
+        algorithm : str
+            ``astar``, ``dijkstra``, ``genetic`` or ``dynamic``.
+        cost_map : CostMap
+            Map to search on.
+        start_cell, goal_cell : (row, col)
+            Snapped ends.
+        config : RoutingConfig
+            Lattice and search parameters (A* and Dijkstra).
+        progress : callable, optional
+            Progress callback.
+
+        Returns
+        -------
+        SearchResult
+            Result of the method.
+        """
+        if algorithm == "dijkstra":
+            return dijkstra(cost_map, start_cell, goal_cell, config, progress=progress)
+        if algorithm == "genetic":
+            # The GA uses its own GeneticConfig defaults (GENETIC); the routing
+            # config does not apply to it.
+            return genetic(cost_map, start_cell, goal_cell, progress=progress)
+        if algorithm == "dynamic":
+            # Dynamic programming: value iteration on the Bellman equation.
+            # 动态规划：在贝尔曼方程上做价值迭代。
+            return dynamic_programming(cost_map, start_cell, goal_cell, progress=progress)
+        return astar(cost_map, start_cell, goal_cell, config, progress=progress)
+
+    #: Largest number of A* re-searches with blocked cells per lattice (phase 1
+    #: of :meth:`_coast_guard`); A* takes a fraction of a second per round.
+    #: 每个网格上"封锁后用 A* 重新搜索"的最大次数。
+    MAX_COAST_CORRECTIONS: int = 8
+    #: Extra rounds for the genetic algorithm on its own route (phase 2).
+    MAX_METHOD_CORRECTIONS: int = 3
+    #: Coarsest lattice used when the coastline check asks for refinement, deg.
+    COAST_REFINE_DEG: float = 0.1
+
+    def _coast_guard(self, algorithm, result, cost_map, start_cell, goal_cell, config,
+                     start, end, coast, progress):
+        """Correct a route that crosses land by blocking cells and searching again.
+
+        封锁穿陆格子并重新搜索，直到航线不再穿越陆地。
+
+        Phase 1 - finding the land. Every round makes impassable, on a copy of
+        the map, the cells chosen by :func:`~.coast_check.cells_to_block` (the
+        cells under the land samples and the vertices of the offending legs)
+        and searches again with A*, which is exact and fast; the new route is
+        checked, and its land is blocked in the next round. The rounds stop
+        when the route no longer crosses land, when there is nothing left to
+        block, when the blocked map has no route (the blocked cells closed the
+        passage) or after :attr:`MAX_COAST_CORRECTIONS` rounds.
+
+        Phase 2 - the chosen method. Dijkstra, dynamic programming and the
+        genetic algorithm are then run once on the corrected map, so that the
+        route shown is still the one of the method the user chose. The genetic
+        algorithm is heuristic: if its route still crosses land, its own land
+        is blocked for up to :attr:`MAX_METHOD_CORRECTIONS` more rounds.
+        For A* the route of phase 1 is already the result.
+
+        Parameters
+        ----------
+        algorithm : str
+            Method chosen by the user.
+        result : SearchResult
+            Route that failed the check.
+        cost_map : CostMap
+            Map it was found on.
+        start_cell, goal_cell : (row, col)
+            Snapped ends (never blocked).
+        config : RoutingConfig
+            Search parameters.
+        start, end : Coordinate
+            Exact ports.
+        coast : CoastCheck
+            Check of ``result``.
+        progress : callable, optional
+            Progress callback.
+
+        Returns
+        -------
+        tuple
+            ``(result, cost_map, coast, corrections, cells_blocked)`` - the best
+            route of the chosen method, the map it was found on, its check,
+            the number of re-searches and the number of blocked cells.
+        """
+        protected = {tuple(start_cell), tuple(goal_cell)}
+        state = {"map": cost_map, "corrections": 0, "blocked": 0}
+        best = (result, coast, cost_map)
+
+        def better(check):
+            return (check.verdict != "crossing"
+                    or check.max_land_run_km < best[1].max_land_run_km)
+
+        def block_and_search(route, check, method):
+            """Block the land of ``route`` and search again; None if impossible."""
+            cells = coastline.cells_to_block(check, state["map"], route.path_cells, protected)
+            if not cells:
+                return None
+            state["corrections"] += 1
+            if progress:
+                progress("coast", 0.0, {"stage": (
+                    f"Route crosses land for {check.max_land_run_km:.0f} km on the coastline "
+                    f"check - blocking {len(cells)} cells and searching again")})
+            LOGGER.info("Coastline check: land run %.1f km, blocking %d cells (round %d, %s)",
+                        check.max_land_run_km, len(cells), state["corrections"], method)
+            candidate_map = coastline.block_cells(state["map"], cells)
+            if method == "astar":
+                candidate = astar(candidate_map, start_cell, goal_cell, config)
+            else:
+                candidate = self._search(method, candidate_map, start_cell, goal_cell, config,
+                                         progress)
+            if not candidate.found:
+                # The blocked cells closed the only passage on this lattice.
+                return None
+            state["map"], state["blocked"] = candidate_map, state["blocked"] + len(cells)
+            return candidate, coastline.check_route(self._anchored(candidate, start, end),
+                                                    approach=True)
+
+        # ---- phase 1: A* probes find the land to block ----------------- #
+        probe, probe_check = result, coast
+        for _ in range(self.MAX_COAST_CORRECTIONS):
+            step = block_and_search(probe, probe_check, "astar")
+            if step is None:
+                break
+            probe, probe_check = step
+            if algorithm == "astar" and better(probe_check):
+                best = (probe, probe_check, state["map"])
+            if probe_check.verdict != "crossing":
+                break
+
+        # ---- phase 2: the chosen method on the corrected map ----------- #
+        if algorithm != "astar" and state["map"] is not cost_map:
+            state["corrections"] += 1
+            final = self._search(algorithm, state["map"], start_cell, goal_cell, config, progress)
+            if final.found:
+                check = coastline.check_route(self._anchored(final, start, end), approach=True)
+                if better(check):
+                    best = (final, check, state["map"])
+                for _ in range(self.MAX_METHOD_CORRECTIONS):
+                    if check.verdict != "crossing":
+                        break
+                    step = block_and_search(final, check, algorithm)
+                    if step is None:
+                        break
+                    final, check = step
+                    if better(check):
+                        best = (final, check, state["map"])
+        result, coast, best_map = best
+        return result, best_map, coast, state["corrections"], state["blocked"]
+
+    def _refine_for_coast(self, start, end, algorithm, config, speed_knots, simplify_km,
+                          progress, attempt, initial):
+        """Plan again on a finer lattice because the route crosses land.
+
+        The new step is :attr:`COAST_REFINE_DEG` (0.1 deg) or, when the lattice
+        is already that fine, 0.55 of the current step, but not finer than
+        :attr:`MIN_RESOLUTION_DEG`. The margin is kept. Returns ``None`` when
+        no further refinement is allowed.
+        因海岸线检查不通过而加密网格重新规划。
+        """
+        if attempt >= self.MAX_REFINEMENTS:
+            return None
+        current = config.grid_resolution_deg
+        finer = self.COAST_REFINE_DEG if current > self.COAST_REFINE_DEG + 1e-9 else round(current * 0.55, 4)
+        if finer < self.MIN_RESOLUTION_DEG:
+            return None
+        if progress:
+            progress("coast", 0.0, {"stage": (
+                f"Route still crosses land at {current}° - planning again on a {finer}° lattice")})
+        LOGGER.info("Coastline check: refining %.3f -> %.3f deg", current, finer)
+        return self.plan(start, end, algorithm, finer, speed_knots, simplify_km,
+                         progress=progress, auto_refine=True, _attempt=attempt + 1,
+                         _margin_deg=config.margin_deg, _coast_initial=initial)
+
+    @staticmethod
+    def _coast_messages(plan: RoutePlan, algorithm: str) -> Tuple[str, str]:
+        """Outcome message and warning text derived from the coastline check."""
+        c = plan.coast_check
+        message = plan.message
+        verdict = c.get("verdict")
+        if verdict == "unchecked":
+            return message, ""
+        changed = c.get("initial_verdict") == "crossing" and verdict != "crossing"
+        if changed:
+            steps = []
+            if c.get("corrections"):
+                n = c["corrections"]
+                steps.append(f"{n} re-search{'es' if n > 1 else ''} with "
+                             f"{c['cells_blocked']} cells blocked")
+            if c.get("refined"):
+                steps.append(f"a finer lattice ({plan.grid.get('resolution_deg')}°)")
+            message += (f"; coastline check: the first route crossed land for "
+                        f"{c.get('initial_max_land_run_km', 0):.0f} km and was corrected "
+                        f"automatically ({' and '.join(steps)})")
+        elif verdict in ("clear", "grazing"):
+            message += "; coastline check passed"
+        if verdict != "crossing" or algorithm == "great_circle":
+            return message, ""
+        warning = (f"The route crosses land for {c['max_land_run_km']:.0f} km according to the "
+                   f"independent 1 km coastline (GLOBE land mask), and the automatic correction "
+                   f"could not remove it. Do not follow this course without checking the "
+                   f"passage on an official nautical chart.")
+        return message, warning
 
     # ------------------------------------------------------------------ #
     def compare_with_great_circle(
@@ -656,7 +930,8 @@ class RoutePlanner:
     MIN_RESOLUTION_DEG: float = 0.04
 
     def _refine(self, start, end, algorithm, config, speed_knots, simplify_km,
-                progress, auto_refine, attempt, reuse_cost_map):
+                progress, auto_refine, attempt, reuse_cost_map, coast_guard=True,
+                coast_initial=None):
         """Retry on a finer and wider lattice; ``None`` when refinement is over.
 
         Every retry multiplies the cell size by 0.55 (to open straits narrower
@@ -687,6 +962,11 @@ class RoutePlanner:
             Number of refinements already made.
         reuse_cost_map : CostMap or None
             Cost map supplied by the caller, if any.
+        coast_guard : bool
+            Passed through to :meth:`plan`.
+        coast_initial : dict, optional
+            Passed through to :meth:`plan` (refinement inside a refinement
+            started by the coastline check).
 
         Returns
         -------
@@ -708,8 +988,9 @@ class RoutePlanner:
                                f"refining the lattice to {finer}°"})
         # Recursive call: builds a new cost map on the finer, wider lattice.
         return self.plan(start, end, algorithm, finer, speed_knots, simplify_km,
-                         progress=progress, auto_refine=True, _attempt=attempt + 1,
-                         _margin_deg=config.margin_deg + 2.0)
+                         progress=progress, auto_refine=True, coast_guard=coast_guard,
+                         _attempt=attempt + 1, _margin_deg=config.margin_deg + 2.0,
+                         _coast_initial=coast_initial)
 
     def _infeasible(self, start, end, algorithm, gc_km, cost_map, speed_knots,
                     runtime, message) -> RoutePlan:

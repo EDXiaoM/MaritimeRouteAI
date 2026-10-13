@@ -133,6 +133,9 @@ class RouteRepository:
         """
         with self._lock, self.connect() as conn:
             conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            # The column must exist before the table rebuild below copies rows
+            # with SELECT * (same column order as schema.sql).
+            self._migrate_coast_column(conn)
             self._migrate_algorithm_check(conn)
             for name in CLASS_NAMES:
                 cost = ZONE_COST[name]
@@ -152,6 +155,25 @@ class RouteRepository:
                         CLASS_COLOR[name],
                     ),
                 )
+
+    @staticmethod
+    def _migrate_coast_column(conn) -> None:
+        """Add ``route.coast_check_json`` to a database created before version 1.2.
+
+        The column is the last one of the table in ``schema.sql``, so
+        ``ALTER TABLE ... ADD COLUMN`` (which appends) gives exactly the
+        current column order. Old routes keep NULL there (not checked).
+        为旧数据库添加海岸线检查结果列。
+
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            Open connection inside the initialisation transaction.
+        """
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(route)")]
+        if columns and "coast_check_json" not in columns:
+            conn.execute("ALTER TABLE route ADD COLUMN coast_check_json TEXT")
+            LOGGER.info("Database upgraded: route.coast_check_json added")
 
     @staticmethod
     def _migrate_algorithm_check(conn) -> None:
@@ -339,8 +361,8 @@ class RouteRepository:
         The route row and all waypoint rows are written in one transaction,
         so a route is never stored without its waypoints. Non-finite numbers
         (cost, ratio and time of an infeasible plan) are stored as NULL.
-        The nested ``baseline`` and ``zone_profile`` dictionaries are stored
-        as JSON text.
+        The nested ``baseline``, ``zone_profile`` and ``coast_check``
+        dictionaries are stored as JSON text.
         在同一事务中写入航线及其全部航路点。
 
         Parameters
@@ -367,8 +389,9 @@ class RouteRepository:
                                      end_lat, end_lon, total_cost, distance_km, great_circle_km,
                                      detour_ratio, estimated_hours, speed_knots, nodes_expanded,
                                      runtime_s, grid_resolution, grid_cells, feasible,
-                                     baseline_json, zone_profile_json, created_utc)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     baseline_json, zone_profile_json, created_utc,
+                                     coast_check_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     plan.route_id, session_id, plan.algorithm,
                     plan.start[0], plan.start[1], plan.end[0], plan.end[1],
@@ -379,6 +402,7 @@ class RouteRepository:
                     1 if plan.feasible else 0,
                     json.dumps(plan.baseline), json.dumps(plan.zone_profile),
                     plan.created_utc,
+                    json.dumps(getattr(plan, "coast_check", {}) or {}),
                 ),
             )
             route_id = int(cur.lastrowid)
@@ -428,9 +452,9 @@ class RouteRepository:
         Returns
         -------
         dict or None
-            All ``route`` columns, with ``baseline_json`` and
-            ``zone_profile_json`` replaced by the parsed ``baseline`` and
-            ``zone_profile`` dictionaries, plus ``waypoints`` - a list of
+            All ``route`` columns, with ``baseline_json``,
+            ``zone_profile_json`` and ``coast_check_json`` replaced by the
+            parsed ``baseline``, ``zone_profile`` and ``coast_check`` dictionaries, plus ``waypoints`` - a list of
             dictionaries ordered by ``seq``. ``None`` if the route is unknown.
         """
         with self.connect() as conn:
@@ -441,6 +465,7 @@ class RouteRepository:
             # Replace the JSON text columns by parsed objects ("{}" for NULL).
             route["baseline"] = json.loads(route.pop("baseline_json") or "{}")
             route["zone_profile"] = json.loads(route.pop("zone_profile_json") or "{}")
+            route["coast_check"] = json.loads(route.pop("coast_check_json", None) or "{}")
             route["waypoints"] = [
                 dict(w) for w in conn.execute(
                     "SELECT seq, latitude, longitude, class_code, zone_cost, cumulative_km, "

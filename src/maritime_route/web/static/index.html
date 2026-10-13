@@ -170,6 +170,10 @@
            结果摘要：指标、区域占比与导出链接。 -->
       <div id="result-block" hidden>
         <h2 class="section-title">Route summary</h2>
+        <!-- Result of the independent coastline check (GLOBE 1 km land mask):
+             green when passed, amber when corrected automatically, red when the
+             route still crosses land. 独立海岸线检查结果。 -->
+        <div id="coast-check" class="verdict" hidden></div>
         <div class="metric-grid" id="metric-grid"></div>
         <h3 class="section-title">Zone profile</h3>
         <div id="zone-bar" class="zone-bar"></div>

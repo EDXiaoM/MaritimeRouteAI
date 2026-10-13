@@ -66,6 +66,9 @@ automatically when `models/zone_classifier.pt` is absent.
 The archive already contains a trained model (`models/`), so this section is
 needed only to retrain or to use a different corpus.
 
+The labelled corpus is attached to the GitHub release v1.0 as
+`merged_geojson_v2.zip` (https://github.com/EDXiaoM/MaritimeRouteAI/releases/download/v1.0/merged_geojson_v2.zip); unpack it into `data/raw/`.
+
 ```bash
 # 1. put the labelled corpus here:
 #    data/raw/merged.geojson
@@ -167,5 +170,7 @@ selected manually in the layer control at the top-left corner of the map.
 | Planning reports *no navigable path* | departure or destination is landlocked; the lattice is already refined and widened three times automatically |
 | Planning reports *lies on land* | the port is more than 60 km from any navigable cell, often because it lies outside the eleven sea regions covered by the training data |
 | The genetic algorithm reports *no navigable route evolved* | the evolutionary search converged on a closed strait; use A\* |
+| A red banner *The route crosses land …* | the automatic coastline check could not correct the route (the neural network takes too much land for water there); set the grid resolution to 0.1° and build again, or check the passage on an official chart |
+| No coastline-check banner appears | the package `global-land-mask` is not installed — `pip install -r requirements.txt` |
 | The map is blank | no internet access — switch to *On-board chart (offline)* in the layer control |
 | `ModuleNotFoundError: maritime_route` | run the scripts from the project root, or set `PYTHONPATH=src` |

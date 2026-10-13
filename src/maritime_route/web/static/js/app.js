@@ -157,7 +157,7 @@ const els = {
   progressBlock: $('progress-block'), progressStage: $('progress-stage'),
   progressPct: $('progress-pct'), progressFill: $('progress-fill'),
   progressDetail: $('progress-detail'),
-  resultBlock: $('result-block'), metricGrid: $('metric-grid'),
+  resultBlock: $('result-block'), metricGrid: $('metric-grid'), coastCheck: $('coast-check'),
   zoneBar: $('zone-bar'), zoneLegend: $('zone-legend'),
   compareBlock: $('compare-block'), benchmarkBlock: $('benchmark-block'),
   modelBlock: $('model-block'), confusion: $('confusion'), historyChart: $('history-chart'),
@@ -373,6 +373,7 @@ const STAGE_TEXT = {
   genetic:  'Genetic algorithm: evolving routes',
   dynamic:  'Dynamic programming: solving the Bellman equation',
   refine:   'Refining the lattice (narrow strait)',
+  coast:    'Coastline check: correcting the route',
   done:     'Route ready',
 };
 
@@ -495,6 +496,7 @@ function renderPlan(plan) {
   State.plan = plan;
   State.layers.route.clearLayers();
 
+  renderCoastCheck(plan);
   if (!plan.feasible || !plan.waypoints.length) {
     els.resultBlock.hidden = false;
     els.metricGrid.innerHTML =
@@ -529,6 +531,17 @@ function renderPlan(plan) {
     color: '#ff5d5a', weight: 2.6, opacity: 0.95, dashArray: '8,6',
   }).bindTooltip('Great-circle (shortest distance)').addTo(State.layers.route);
 
+  // Points where the route still crosses land on the independent coastline
+  // (only when the automatic correction could not remove them).
+  // 经自动修正后仍位于陆地上的航线采样点，以红色圆点标出。
+  const cc = plan.coast_check || {};
+  if (cc.verdict === 'crossing' && plan.algorithm !== 'great_circle') {
+    (cc.land_points || []).forEach((p) => {
+      L.circleMarker(p, { radius: 4, color: '#ff2d55', weight: 2, fillOpacity: 0.85 })
+        .bindTooltip('Over land on the independent coastline').addTo(State.layers.route);
+    });
+  }
+
   // Zoom to the route with 18 % padding on each side. 缩放至航线范围。
   map.fitBounds(L.polyline(plan.waypoints).getBounds().pad(0.18));
 
@@ -558,6 +571,44 @@ function renderPlan(plan) {
   els.resultBlock.hidden = false;
 
   renderComparison(plan);
+}
+
+/**
+ * Banner with the independent coastline check of the route (plan.coast_check):
+ *   clear / grazing        -> green, "passed";
+ *   corrected              -> amber, how the first route was corrected;
+ *   crossing               -> red, the server's warning text;
+ *   unchecked / absent     -> hidden (land mask not installed).
+ * 显示独立海岸线检查结果的横幅。
+ *
+ * @param {Object} plan - RoutePlan.to_dict().
+ */
+function renderCoastCheck(plan) {
+  const c = plan.coast_check || {};
+  const box = els.coastCheck;
+  if (!c.verdict || c.verdict === 'unchecked' || !plan.feasible) { box.hidden = true; return; }
+  box.hidden = false;
+  if (c.verdict === 'crossing') {
+    box.className = 'verdict bad';
+    box.textContent = plan.algorithm === 'great_circle'
+      ? `Coastline check: the great circle crosses land for ${fmt(c.max_land_run_km, 0)} km.`
+      : `⚠ ${plan.warning}`;
+    return;
+  }
+  const corrected = c.initial_verdict === 'crossing';
+  box.className = corrected ? 'verdict fixed' : 'verdict good';
+  const how = [];
+  if (c.corrections) {
+    how.push(`${c.corrections} re-search${c.corrections > 1 ? 'es' : ''}, ` +
+             `${c.cells_blocked} cell${c.cells_blocked === 1 ? '' : 's'} blocked`);
+  }
+  if (c.refined) how.push(`finer lattice ${plan.grid.resolution_deg}°`);
+  box.textContent = corrected
+    ? `Coastline check: the first route crossed land for ${fmt(c.initial_max_land_run_km, 0)} km ` +
+      `and was corrected automatically (${how.join('; ')}). The final route passes the check.`
+    : `Coastline check passed: ${c.verdict === 'clear' ? 'no land on the route'
+        : `touches the coast for at most ${fmt(c.max_land_run_km, 0)} km`} ` +
+      `(independent 1 km land mask, ${fmtInt(c.samples)} samples).`;
 }
 
 /**
@@ -599,6 +650,9 @@ function renderComparison(plan) {
       <tr><td>Share over land</td><td>${fmt((b.land_share || 0) * 100, 1)} %</td></tr>
       <tr><td>Optimised: intermediate waypoints over land</td>
           <td>${plan.interior_land_waypoints}</td></tr>
+      <tr><td>Optimised: coastline check (1 km land mask)</td>
+          <td>${(plan.coast_check || {}).verdict || '-'}${(plan.coast_check || {}).max_land_run_km
+               ? `, longest land stretch ${fmt(plan.coast_check.max_land_run_km, 1)} km` : ''}</td></tr>
       <tr><td>Optimised: waypoints in total</td><td>${fmtInt(plan.waypoints.length)}</td></tr>
       <tr><td>Passage time saved/lost</td><td>${fmt(plan.estimated_hours - (b.distance_km / (plan.speed_knots * 1.852)), 1)} h</td></tr>
     </table>

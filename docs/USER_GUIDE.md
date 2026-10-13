@@ -53,7 +53,9 @@ Press **Build route**. A progress block reports each stage:
    evolving routes* with the generation number and the best route cost so far;
    for dynamic programming *Dynamic programming: solving the Bellman equation*
    with the sweep number and the number of values improved in it)
-5. *Route ready*
+5. *Coastline check: correcting the route* — only when the first route
+   crosses land on the independent coastline (see 2.5)
+6. *Route ready*
 
 If no route is found — because a strait is narrower than one lattice cell, or
 because the only passage lies outside the rectangle around the two ports — the
@@ -78,6 +80,30 @@ The *Route summary* panel reports the route length, the great-circle distance,
 the detour ratio, the weighted traversal cost, the estimated passage time, the
 planning time, the number of expanded nodes and the number of waypoints. Below
 it, the *Zone profile* bar shows how much of the route lies in each zone.
+
+### 2.5 Coastline check
+
+Every route is checked automatically against an independent coastline — the
+1 km GLOBE land mask of the package `global-land-mask`, which plays no part in
+the classification. The route is sampled every kilometre; the first and the
+last 5 km (the quays) are not checked. A banner above the route summary shows
+the outcome:
+
+| Banner | Meaning |
+|---|---|
+| green — *Coastline check passed* | no land on the route, or it only touches the coast for less than 3 km |
+| amber — *the first route crossed land … and was corrected automatically* | the neural network had taken some land for water; the cells under that land were blocked and the route searched again (if necessary on a finer lattice); the route shown passes the check |
+| red — *⚠ The route crosses land …* | the automatic correction could not remove the land; the places are marked on the chart with red circles. Do not follow such a course; try a finer grid resolution or check the passage on an official chart |
+
+A port given by a city-centre coordinate lies on land, and the straight
+connector from it to the open water may cross the shore: such land touching
+the quay is counted as the *port approach* and is not an error. The result of
+the check is also written to the PDF report (line *Coastline check*), to the
+GeoJSON export and to the database.
+
+The check needs the package `global-land-mask` (installed with
+`requirements.txt`); without it the banner is not shown and the application
+works as before.
 
 ## 3. Comparing with the shortest route
 
@@ -125,7 +151,7 @@ After a route has been built, three buttons appear under the route summary:
 |---|---|---|
 | **GeoJSON** | `route_<id>.geojson` | route line, every waypoint with its zone, and the great-circle reference line |
 | **CSV** | `route_<id>.csv` | waypoint table: sequence, coordinates, zone, weight, cumulative distance, bearing |
-| **PDF report** | `route_<id>.pdf` | voyage summary, zone profile, comparison with the shortest route, model information and the waypoint list |
+| **PDF report** | `route_<id>.pdf` | voyage summary (including the coastline check and its warning, if any), zone profile, comparison with the shortest route, model information and the waypoint list |
 
 The GeoJSON file carries styling properties (`stroke`, `marker-color`) and opens
 directly in QGIS, geojson.io and similar tools.

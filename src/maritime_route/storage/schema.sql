@@ -138,7 +138,11 @@ CREATE TABLE IF NOT EXISTS route (
     -- JSON documents: great-circle comparison and waypoint count per zone.
     baseline_json     TEXT,
     zone_profile_json TEXT,
-    created_utc       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    created_utc       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    -- Independent coastline check of the route (JSON: verdict, longest land
+    -- stretch, automatic corrections). Added in version 1.2 as the last column,
+    -- so that older databases are upgraded with ALTER TABLE ... ADD COLUMN.
+    coast_check_json  TEXT
 );
 -- Indexes for per-method statistics (GROUP BY algorithm) and for listing
 -- routes newest first (ORDER BY created_utc).

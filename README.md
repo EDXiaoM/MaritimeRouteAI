@@ -1,14 +1,29 @@
-# Maritime Route Planner
+# Maritime Route Planner — diploma project
 
-**Application for constructing a maritime vessel's course based on neural-network
-classification of geographic zones.**
+**Русская версия — [README_ru.md](README_ru.md)** · 中文 — [README_zh.md](README_zh.md)
 
-Diploma project · Li Haoran · Brest State Technical University, Department of
-Intelligent Information Technologies · supervisor А.А. Козинский · 2026/27
+Li Haoran · Brest State Technical University, Department of Intelligent
+Information Technologies · supervisor А.А. Козинский · 2026/27
 
-> Chinese version of this document: [README_zh.md](README_zh.md).
-> Step-by-step installation: [docs/INSTALL.md](docs/INSTALL.md).
-> Complete user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+**Diploma project:** *application for constructing a maritime vessel's course based
+on neural-network classification of geographic zones.*
+
+> The **course project** of the author («Sea Course GA», genetic algorithm) is a
+> separate repository: <https://github.com/EDXiaoM/SeaCourseGA>.
+
+## Materials of the diploma project
+
+| Material | Where |
+|---|---|
+| Explanatory note, **first version** (Word and PDF) | [`docs/diploma/`](docs/diploma) |
+| Assignment for the diploma project (Russian) | [`docs/diploma/Assignment_diploma_ru.pdf`](docs/diploma/Assignment_diploma_ru.pdf) |
+| Graphic material, 5 sheets A1 (PDF and PNG) | [`docs/posters/`](docs/posters) |
+| **User guide** (installation and work, PDF) | [`docs/User_Guide_MaritimeRouteAI.pdf`](docs/User_Guide_MaritimeRouteAI.pdf) |
+| User guide and installation guide (Markdown) | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md), [`docs/INSTALL.md`](docs/INSTALL.md) |
+| Program code | [`src/`](src), [`scripts/`](scripts), [`tests/`](tests) |
+| Trained model | [`models/`](models) |
+| Figures and screenshots of the thesis | [`docs/figures/`](docs/figures), [`docs/screenshots/`](docs/screenshots) |
+| Labelled dataset (second release, 156 838 points, zip 7 MB) | `merged_geojson_v2.zip` in [release v1.0](https://github.com/EDXiaoM/MaritimeRouteAI/releases/tag/v1.0) |
 
 ---
 
@@ -85,10 +100,46 @@ Red Sea; 97.9 % in the newly added Aegean Sea).
 | Result | Value |
 |---|---|
 | Great-circle routes that cross land | 17 of 17 |
-| Optimised routes that are navigable | 17 of 17 |
+| Optimised routes that are navigable (as judged by the classifier) | 17 of 17 |
 | A\* vs Dijkstra vs dynamic programming | identical optimal cost on all 17 voyages; A\* expands 2.5× fewer nodes than Dijkstra on average |
 | Genetic algorithm | navigable route in 15 of 17 voyages; on average 1.1 % (regional) and 3.8 % (European) above the optimum |
 | Extra distance of a safe route | +17 % (European) and +28 % (regional) on average |
+
+**Test on 100 random voyages** (`scripts/route_audit.py`; every route checked
+kilometre by kilometre against an independent 1 km land mask, GLOBE / global-land-mask):
+
+| Verdict | Voyages |
+|---|---|
+| Correct course | 66 |
+| Grazing the coast (land runs under 3 km) | 5 |
+| Crossing land | 19 — 16 because the classifier takes sparsely sampled land for water, 3 because of a diagonal step of the lattice |
+| No route | 10 — 7 without an open sea connection (Caribbean ↔ Pacific, Bosporus), 3 with the passage closed on the classified lattice |
+
+Every voyage is listed in `docs/figures/route_audit.csv` and drawn in appendix C of
+the thesis. The errors show where the corpus needs denser coastal samples.
+
+**Automatic coastline check (version 1.2).** Since the test showed that the classifier
+sometimes takes sparsely sampled land for water, the planner now checks *every* route
+in the same way (`src/maritime_route/routing/coast_check.py`): the route is sampled every
+kilometre against the independent land mask; if it crosses land for 3 km or more, the
+offending lattice cells are blocked and the search is repeated (if necessary on a finer
+lattice), and a route that still crosses land is shown with a red warning. The result
+appears as a banner above the route summary and in the PDF report, the GeoJSON export
+and the database. Repeating the 100-voyage test with the check:
+
+| Verdict | Without the check | With the check |
+|---|---|---|
+| Correct course | 66 | 75 |
+| Grazing the coast | 5 | 15 |
+| Crossing land | 19 | 0 |
+| No route | 10 | 10 |
+
+19 of the 19 incorrect courses are corrected automatically;
+the voyages that were already correct keep their routes, and the mean request time
+grows by about 1 %.
+Four of the five presets of the interface also crossed land without the check
+(Helsinki → Copenhagen by 108 km) and now pass it. The check needs the package
+`global-land-mask` (in `requirements.txt`); without it the planner works as before.
 
 The genetic algorithm fails on Rotterdam → Gdańsk, where it converges on the
 Øresund (which the lattice closes by one cell) and cannot jump to the Great Belt
@@ -152,8 +203,10 @@ Every control is explained in [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 ## 6. Reproducing the results
 
 The labelled corpus `merged.geojson` (119 MB, second release with the Aegean
-Sea) is too large for GitHub. Put it at
-`data/raw/merged.geojson` and run:
+Sea) is too large to be stored in the repository itself; it is attached to
+[release v1.0](https://github.com/EDXiaoM/MaritimeRouteAI/releases/tag/v1.0) as
+`merged_geojson_v2.zip` (7 MB). Download it, unpack it to `data/raw/merged.geojson`
+and run:
 
 ```bash
 python scripts/prepare_dataset.py     # ~16 s: cleaning, split, features  -> data/processed/
@@ -162,6 +215,7 @@ python scripts/evaluate_regions.py    # accuracy per sea region           -> mod
 python scripts/benchmark_routing.py   # 6 European voyages                -> docs/figures/routing_benchmark.json
 python scripts/regional_examples.py   # 11 regional voyages + map figure  -> docs/figures/regional_routes.json
 python scripts/make_figures.py        # all figures of the thesis         -> docs/figures/
+python scripts/route_audit.py         # 100 random voyages, land check    -> docs/figures/route_audit.*  (needs global-land-mask)
 ```
 
 `prepare_dataset.py --no-clean` reproduces the dataset without the cleaning step.
@@ -188,15 +242,21 @@ MaritimeRouteAI/
 │   │   ├── dijkstra.py            Dijkstra search
 │   │   ├── genetic.py             genetic-algorithm search (fitness function)
 │   │   ├── dynamic_programming.py value iteration on the Bellman equation (value function)
-│   │   └── planner.py             orchestration, refinement, benchmark
+│   │   ├── coast_check.py         independent coastline check of every route
+│   │   └── planner.py             orchestration, refinement, coastline correction, benchmark
 │   ├── storage/                   SQLite schema and repository
 │   ├── export/                    GeoJSON / CSV / PDF writers
 │   └── web/                       FastAPI service, WebSocket, tiles, browser client
 ├── scripts/                       command-line tools (section 6) and run_server.py
-├── tests/                         86 automated tests (pytest)
+├── tests/                         101 automated tests (pytest)
 ├── models/                        trained weights, scaler, reference index, metadata
 ├── data/samples/                  sample AIS track
-└── docs/                          INSTALL.md, USER_GUIDE.md, figures, posters, screenshots
+└── docs/
+    ├── diploma/                   explanatory note, first version (Word, PDF), assignment
+    ├── posters/                   graphic material, 5 sheets A1
+    ├── User_Guide_MaritimeRouteAI.pdf   user guide (installation and work)
+    ├── INSTALL.md, USER_GUIDE.md  the same guides in Markdown
+    └── figures/, screenshots/     figures and screenshots of the thesis
 ```
 
 Every module, class and function carries an English docstring describing its
@@ -210,7 +270,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-All 86 tests must pass. Tests that need the trained model are skipped when
+All 101 tests must pass. Tests that need the trained model are skipped when
 `models/zone_classifier.pt` is missing.
 
 ## 9. Limitations

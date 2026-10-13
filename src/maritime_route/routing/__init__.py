@@ -5,7 +5,7 @@
 This package turns two coordinates (departure, destination) into a navigable
 route. It sits after the neural classifier in the pipeline::
 
-    classifier (model.inference) -> cost_map -> astar | dijkstra | genetic -> planner -> storage / export / web
+    classifier (model.inference) -> cost_map -> astar | dijkstra | genetic | dynamic -> coast_check -> planner -> storage / export / web
 
 Modules
 -------
@@ -24,11 +24,15 @@ dijkstra
 genetic
     :func:`~maritime_route.routing.genetic.genetic` - evolutionary search on
     the same cost model (not re-exported here; imported by the planner).
+coast_check
+    Independent coastline check of a route against the 1 km GLOBE land mask
+    (package ``global-land-mask``) and the choice of the lattice cells to
+    block when a route crosses land (imported by the planner).
 planner
     :class:`RoutePlanner` - the service used by the web application: builds
     the lattice, snaps the ports onto water, runs the chosen algorithm,
-    refines the lattice on failure and compares the result with the great
-    circle. :func:`benchmark` runs all methods on one shared cost map.
+    refines the lattice on failure, corrects a route that crosses land on the
+    coastline check and compares the result with the great circle. :func:`benchmark` runs all methods on one shared cost map.
 
 The names below are the public API of the package.
 以下名称为本包对外公开的接口。

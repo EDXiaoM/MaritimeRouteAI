@@ -1,10 +1,28 @@
-# 海上航线规划系统（Maritime Route Planner）
+# 海上航线规划系统（Maritime Route Planner）— 毕业设计
 
-**基于神经网络地理区域分类的海船航线构建应用程序**
+**俄文版 — [README_ru.md](README_ru.md)** · English — [README.md](README.md)
 
-毕业设计 · Li Haoran · 布列斯特国立技术大学 智能信息技术教研室 · 指导老师 А.А. Козинский · 2026/27 学年
+Li Haoran · 布列斯特国立技术大学 智能信息技术教研室 · 指导老师 А.А. Козинский · 2026/27 学年
 
-> 英文版说明见 [README.md](README.md)；详细安装步骤见 [docs/INSTALL.md](docs/INSTALL.md)；完整使用手册见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
+**毕业设计**：*基于神经网络地理区域分类的海船航线构建应用程序。*
+
+> 作者的**课程设计**（Sea Course GA，遗传算法）在另一个仓库：<https://github.com/EDXiaoM/SeaCourseGA>。
+
+## 毕业设计材料
+
+| 材料 | 位置 |
+|---|---|
+| 说明书**第一稿**（Word 和 PDF） | [`docs/diploma/`](docs/diploma) |
+| 任务书（俄文原件） | [`docs/diploma/Assignment_diploma_ru.pdf`](docs/diploma/Assignment_diploma_ru.pdf) |
+| 图纸（5 张 A1，PDF 和 PNG） | [`docs/posters/`](docs/posters) |
+| **用户手册**（安装与使用，PDF） | [`docs/User_Guide_MaritimeRouteAI.pdf`](docs/User_Guide_MaritimeRouteAI.pdf) |
+| 用户手册与安装说明（Markdown） | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)、[`docs/INSTALL.md`](docs/INSTALL.md) |
+| 程序代码 | [`src/`](src)、[`scripts/`](scripts)、[`tests/`](tests) |
+| 训练好的模型 | [`models/`](models) |
+| 论文插图和截图 | [`docs/figures/`](docs/figures)、[`docs/screenshots/`](docs/screenshots) |
+| 带标签数据集（第二版，156,838 个点，压缩包 7 MB） | [Release v1.0](https://github.com/EDXiaoM/MaritimeRouteAI/releases/tag/v1.0) 中的 `merged_geojson_v2.zip` |
+
+详细安装步骤见 [docs/INSTALL.md](docs/INSTALL.md)，完整使用手册见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
 
 ---
 
@@ -55,10 +73,32 @@
 | 结果 | 数值 |
 |---|---|
 | 穿过陆地的大圆航线 | 17 条中 17 条 |
-| 可航行的优化航线 | 17 条中 17 条 |
+| 可航行的优化航线（按分类器判断） | 17 条中 17 条 |
 | A\*、Dijkstra、动态规划 | 17 条航线上最优代价完全相同；A\* 展开的节点平均比 Dijkstra 少 2.5 倍 |
 | 遗传算法 | 17 条中 15 条找到可航行航线；平均比最优解高 1.1%（十一个海域）和 3.8%（欧洲） |
 | 安全航线多走的距离 | 平均 +17%（欧洲）、+28%（十一个海域） |
+
+**100 条随机航线测试**（`scripts/route_audit.py`；每条航线每公里用独立的 1 km 陆地掩膜 GLOBE / global-land-mask 检查一次）：
+
+| 结果 | 航线数 |
+|---|---|
+| 航线正确 | 66 |
+| 擦到海岸（陆地段短于 3 km） | 5 |
+| 穿过陆地 | 19（16 条是分类器把样本稀少的陆地当成了水，3 条是网格斜向一步跨过窄陆地） |
+| 没找到航线 | 10（7 条没有开放的海上通道：加勒比海 ↔ 太平洋、博斯普鲁斯海峡；3 条通道在分类网格上被堵住） |
+
+所有航线记录在 `docs/figures/route_audit.csv`，地图在论文附录 C。错误的位置说明了语料在哪些海岸需要补充样本。
+
+**自动海岸线检查（1.2 版）。** 测试表明分类器有时会把样本稀少的陆地当成水，所以现在规划器对*每一条*航线都做同样的检查（`src/maritime_route/routing/coast_check.py`）：航线每公里用独立的陆地掩膜检查一次；如果连续穿越陆地 3 km 以上，就把相应的网格格子封锁后重新搜索（必要时换更细的网格）；仍然穿陆的航线会显示红色警告。检查结果显示在航线摘要上方的横幅里，也写进 PDF 报告、GeoJSON 导出和数据库。开启检查后重做 100 条航线测试：
+
+| 结果 | 无检查 | 有检查 |
+|---|---|---|
+| 航线正确 | 66 | 75 |
+| 擦到海岸 | 5 | 15 |
+| 穿过陆地 | 19 | 0 |
+| 没找到航线 | 10 | 10 |
+
+19 条错误航线中有 19 条被自动修正；原本正确的航线保持不变，平均请求时间只增加约 1%。界面的 5 条预设航线中有 4 条在没有检查时也穿过陆地（Helsinki → Copenhagen 穿陆 108 km），现在全部通过检查。检查需要 `global-land-mask` 包（已写入 `requirements.txt`）；没有它时规划器照旧工作。
 
 遗传算法在两条航线上失败：Rotterdam → Gdańsk 收敛到了厄勒海峡（栅格在那里恰好差一个格子不通），无法跳到 A\* 找到的大贝尔特海峡；Piraeus → Thessaloniki 在爱琴海岛群中始终没有找到不穿越陆地的通道。这是进化搜索在"迷宫式"地形中的已知弱点，论文中有讨论。
 
@@ -139,7 +179,7 @@ python scripts/run_server.py --host 0.0.0.0           # 允许局域网内其他
 
 ## 六、复现实验结果
 
-数据集 `merged.geojson`（119 MB，含爱琴海的第二版）超过 GitHub 的文件大小限制，没有放进仓库。把它放到 `data/raw/merged.geojson` 后依次运行：
+数据集 `merged.geojson`（119 MB，含爱琴海的第二版）太大，不能直接放进仓库，已作为附件 `merged_geojson_v2.zip`（7 MB）放在 [Release v1.0](https://github.com/EDXiaoM/MaritimeRouteAI/releases/tag/v1.0)。下载解压到 `data/raw/merged.geojson` 后依次运行：
 
 ```bash
 python scripts/prepare_dataset.py     # 约 16 秒：清洗、划分、特征        -> data/processed/
@@ -148,6 +188,7 @@ python scripts/evaluate_regions.py    # 按海域统计准确率                
 python scripts/benchmark_routing.py   # 欧洲 6 条航线                     -> docs/figures/routing_benchmark.json
 python scripts/regional_examples.py   # 十一个海域 11 条航线 + 地图       -> docs/figures/regional_routes.json
 python scripts/make_figures.py        # 论文全部插图                      -> docs/figures/
+python scripts/route_audit.py         # 100 条随机航线测试                -> docs/figures/route_audit.*（需要 global-land-mask）
 ```
 
 `prepare_dataset.py --no-clean` 可以生成不做清洗的数据集，用于对比。
@@ -159,7 +200,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-应显示 86 个测试全部通过。
+应显示 101 个测试全部通过。
 
 ## 八、目录结构
 
@@ -174,10 +215,14 @@ MaritimeRouteAI/
 │   ├── export/                    GeoJSON / CSV / PDF 导出
 │   └── web/                       FastAPI 服务、WebSocket、瓦片、浏览器前端
 ├── scripts/                       命令行工具（第六节）与 run_server.py
-├── tests/                         86 个自动化测试
+├── tests/                         101 个自动化测试
 ├── models/                        训练好的权重、标准化器、参考索引、元数据
 ├── data/samples/                  AIS 样例轨迹
-└── docs/                          安装说明、用户手册、插图、图纸、截图
+└── docs/
+    ├── diploma/                   毕业设计说明书第一稿（Word、PDF）和任务书
+    ├── posters/                   毕业设计图纸（5 张 A1）
+    ├── User_Guide_MaritimeRouteAI.pdf   用户手册（安装与使用）
+    └── INSTALL.md、USER_GUIDE.md、figures/、screenshots/
 ```
 
 每个模块、类和函数都有英文文档字符串，说明用途、参数和返回值；不直观的步骤有行内注释。中文注释是作者的补充说明。

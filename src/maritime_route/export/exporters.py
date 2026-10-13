@@ -108,6 +108,9 @@ def route_to_geojson(plan, include_points: bool = True,
                 "nodes_expanded": plan.nodes_expanded,
                 "runtime_s": round(plan.runtime_s, 4),
                 "created_utc": plan.created_utc,
+                "coast_check": (getattr(plan, "coast_check", {}) or {}).get("verdict"),
+                "coast_max_land_run_km": (getattr(plan, "coast_check", {}) or {}).get("max_land_run_km"),
+                "warning": getattr(plan, "warning", ""),
                 "stroke": "#0b6efd", "stroke-width": 4, "stroke-opacity": 0.9,
             },
             "geometry": {
@@ -485,7 +488,13 @@ def route_to_pdf(plan, path: Path | str, map_png: Optional[bytes] = None,
         ["Grid", f"{plan.grid.get('n_rows')} x {plan.grid.get('n_cols')} cells at "
                  f"{plan.grid.get('resolution_deg')}°"],
         ["Feasible", "Yes" if plan.feasible else "No"],
+        ["Coastline check", _coast_text(getattr(plan, "coast_check", {}) or {})],
     ], [58 * mm, 110 * mm]))
+    if getattr(plan, "warning", ""):
+        # The route still crosses land on the independent coastline.
+        # 航线经独立海岸线检查仍穿越陆地：在报告中醒目提示。
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(f"<font color='#b00020'><b>Warning.</b> {plan.warning}</font>", body))
 
     # --- 2. map ------------------------------------------------------------
     if map_png:
@@ -522,7 +531,8 @@ def route_to_pdf(plan, path: Path | str, map_png: Optional[bytes] = None,
             ["Extra length", "-", f"+{b.get('extra_distance_pct', 0):.2f} %"],
             ["Samples over land", f"{b.get('land_samples', 0)} of {b.get('samples', 0)}", "0"],
             ["Share over land", f"{100.0 * b.get('land_share', 0):.1f} %", "0.0 %"],
-            ["Navigable", "Yes" if b.get("is_navigable") else "No", "Yes"],
+            ["Navigable", "Yes" if b.get("is_navigable") else "No",
+             "No - see the warning" if getattr(plan, "warning", "") else "Yes"],
         ], [45 * mm, 60 * mm, 60 * mm]))
         story.append(Spacer(1, 4))
         story.append(Paragraph(f"<b>Conclusion.</b> {b.get('verdict', '')} "
@@ -616,6 +626,36 @@ def export_all(plan, results: Optional[Sequence] = None,
         paths["points_csv"] = str(write_csv(
             points_to_csv_string(results), directory / f"{stem}_points.csv"))
     return paths
+
+
+def _coast_text(check: Dict) -> str:
+    """One-line description of the coastline check for the PDF report.
+
+    Parameters
+    ----------
+    check : dict
+        ``RoutePlan.coast_check``.
+
+    Returns
+    -------
+    str
+        For example ``"passed (corrected automatically: 2 re-searches)"``.
+    """
+    verdict = check.get("verdict")
+    if not verdict or verdict == "unchecked":
+        return "not performed (land mask not installed)"
+    text = {"clear": "passed - no land on the route",
+            "grazing": f"passed - touches the coast for at most {check.get('max_land_run_km', 0):.0f} km",
+            "crossing": f"FAILED - crosses land for {check.get('max_land_run_km', 0):.0f} km"}[verdict]
+    if check.get("initial_verdict") == "crossing" and verdict != "crossing":
+        parts = []
+        if check.get("corrections"):
+            n = check["corrections"]
+            parts.append(f"{n} re-search{'es' if n > 1 else ''}")
+        if check.get("refined"):
+            parts.append("finer lattice")
+        text += f" (corrected automatically: {', '.join(parts)})"
+    return text
 
 
 def _clean(value) -> Optional[float]:

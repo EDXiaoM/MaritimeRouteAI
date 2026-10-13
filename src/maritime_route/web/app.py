@@ -690,7 +690,9 @@ def create_app() -> FastAPI:
             ``estimated_hours``, ``nodes_expanded``, ``runtime_s``, ``grid``,
             ``zone_profile``, ``baseline``, ``cost_map_stats``,
             ``created_utc``, ``speed_knots``, ``interior_land_waypoints``,
-            ``feasible`` and ``message``. An impossible voyage is *not* an
+            ``feasible``, ``message``, ``coast_check`` (independent coastline
+            check: verdict, longest land stretch, automatic corrections, land
+            points) and ``warning`` (non-empty if the route still crosses land). An impossible voyage is *not* an
             HTTP error: it is returned with ``feasible = false`` and a
             ``message`` explaining why.
 
