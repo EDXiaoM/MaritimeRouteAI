@@ -170,6 +170,16 @@ python scripts/run_server.py
 
 看到 `Zone classifier ready` 后，用浏览器打开 <http://127.0.0.1:8000>。仓库里已带训练好的模型（`models/`），**不需要先训练**。
 
+**更新到最新版本**：用 `git clone` 下载的项目可以直接更新——先在终端按 **Ctrl + C** 停止服务器，再在项目文件夹中执行：
+
+```bash
+git pull
+pip install -r requirements.txt   # 先激活 .venv 环境
+python scripts/run_server.py
+```
+
+数据库、`outputs/results` 中的结果文件和 `.venv` 环境都会保留。用 ZIP 下载的项目需要重新下载（详见 [docs/INSTALL.md](docs/INSTALL.md) 第 2.5 节）。
+
 如果 `pip` 装不上 PyTorch，单独安装 CPU 版：
 
 ```bash

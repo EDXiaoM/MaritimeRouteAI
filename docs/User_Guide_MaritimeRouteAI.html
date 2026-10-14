@@ -108,6 +108,26 @@ pytest
 </code></pre>
 <p>All tests must pass. Tests that need the trained model are skipped
 automatically when <code>models/zone_classifier.pt</code> is absent.</p>
+<h4 id="p1-2">2.5 Updating the project from GitHub</h4>
+<p>When a new version is published in the repository, the copy on the computer is
+updated in place; nothing has to be installed again. Stop the server
+(<strong>Ctrl + C</strong>) and run, in the project folder:</p>
+<pre><code class="language-bash">git pull                         # the new version from GitHub
+.venv\Scripts\activate           # Windows
+source .venv/bin/activate        # Linux / macOS
+pip install -r requirements.txt  # new dependencies, if any
+python scripts/run_server.py     # start again, reload the page
+</code></pre>
+<p><code>git pull</code> leaves alone the files that are not part of the repository: the
+database (<code>data/maritime_route.db</code>), the result files (<code>outputs/results</code>), the
+loaded data and the environment <code>.venv</code>. If it refuses because files of the
+repository were changed locally, either discard those changes with
+<code>git checkout -- .</code> or set them aside with <code>git stash</code>, then repeat <code>git pull</code>.
+<code>git log -1</code> shows the version that is installed.</p>
+<p>A copy unpacked from a ZIP archive has no link to the repository: download the
+new archive (<em>Code → Download ZIP</em>), unpack it into a new folder, copy the
+folders <code>outputs</code> and <code>data</code> from the old copy into it, and repeat steps
+2.2–2.3.</p>
 <h3 id="p1-2">3. Preparing the data and the model</h3>
 <p>The archive already contains a trained model (<code>models/</code>), so this section is
 needed only to retrain or to use a different corpus.</p>
@@ -329,6 +349,18 @@ selected manually in the layer control at the top-left corner of the map.</p>
 <tr>
 <td><code>ModuleNotFoundError: maritime_route</code></td>
 <td>run the scripts from the project root, or set <code>PYTHONPATH=src</code></td>
+</tr>
+<tr>
+<td><code>Activate.ps1 cannot be loaded because running scripts is disabled</code> (Windows PowerShell)</td>
+<td>allow local scripts once with <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>, or skip the activation and call <code>.venv\Scripts\python.exe</code> directly</td>
+</tr>
+<tr>
+<td><code>can't open file ... scripts\run_server.py</code></td>
+<td>the folder is not a complete copy of the project (for example an update package); clone the repository or download it as ZIP from GitHub</td>
+</tr>
+<tr>
+<td><code>git pull</code> reports <em>Your local changes would be overwritten</em></td>
+<td>files of the repository were edited locally — <code>git stash</code> (keep them) or <code>git checkout -- .</code> (discard them), then <code>git pull</code> again</td>
 </tr>
 </tbody>
 </table><h1 class="part" id="p2">Part II. Working with the application</h1><h3 id="p2-0">1. Starting the application</h3>

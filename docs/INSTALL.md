@@ -61,6 +61,32 @@ pytest
 All tests must pass. Tests that need the trained model are skipped
 automatically when `models/zone_classifier.pt` is absent.
 
+### 2.5 Updating the project from GitHub
+
+When a new version is published in the repository, the copy on the computer is
+updated in place; nothing has to be installed again. Stop the server
+(**Ctrl + C**) and run, in the project folder:
+
+```bash
+git pull                         # the new version from GitHub
+.venv\Scripts\activate           # Windows
+source .venv/bin/activate        # Linux / macOS
+pip install -r requirements.txt  # new dependencies, if any
+python scripts/run_server.py     # start again, reload the page
+```
+
+`git pull` leaves alone the files that are not part of the repository: the
+database (`data/maritime_route.db`), the result files (`outputs/results`), the
+loaded data and the environment `.venv`. If it refuses because files of the
+repository were changed locally, either discard those changes with
+`git checkout -- .` or set them aside with `git stash`, then repeat `git pull`.
+`git log -1` shows the version that is installed.
+
+A copy unpacked from a ZIP archive has no link to the repository: download the
+new archive (*Code → Download ZIP*), unpack it into a new folder, copy the
+folders `outputs` and `data` from the old copy into it, and repeat steps
+2.2–2.3.
+
 ## 3. Preparing the data and the model
 
 The archive already contains a trained model (`models/`), so this section is
@@ -179,3 +205,6 @@ selected manually in the layer control at the top-left corner of the map.
 | Where are the result files? | `outputs/results` of the project (or `MR_RESULTS_DIR`); the path is shown after every search and on the *Data* tab |
 | The map is blank | no internet access — switch to *On-board chart (offline)* in the layer control |
 | `ModuleNotFoundError: maritime_route` | run the scripts from the project root, or set `PYTHONPATH=src` |
+| `Activate.ps1 cannot be loaded because running scripts is disabled` (Windows PowerShell) | allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip the activation and call `.venv\Scripts\python.exe` directly |
+| `can't open file ... scripts\run_server.py` | the folder is not a complete copy of the project (for example an update package); clone the repository or download it as ZIP from GitHub |
+| `git pull` reports *Your local changes would be overwritten* | files of the repository were edited locally — `git stash` (keep them) or `git checkout -- .` (discard them), then `git pull` again |

@@ -224,6 +224,21 @@ A trained model is included in `models/`, so **no training is needed** to run th
 application. Detailed instructions for each operating system, including the
 installation of the CPU build of PyTorch, are in [docs/INSTALL.md](docs/INSTALL.md).
 
+### Updating to the latest version
+
+A copy cloned with git is updated in place — stop the server (**Ctrl + C**), then in
+the project folder:
+
+```bash
+git pull
+pip install -r requirements.txt   # with the environment .venv activated
+python scripts/run_server.py
+```
+
+The database, the result files in `outputs/results` and the environment `.venv` are
+kept. A copy downloaded as ZIP has to be downloaded again (details in
+[docs/INSTALL.md](docs/INSTALL.md), section 2.5).
+
 ## 5. Using the application
 
 1. Click the chart twice (departure, then destination), drag the markers, type

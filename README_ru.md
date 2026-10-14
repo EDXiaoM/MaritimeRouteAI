@@ -230,6 +230,21 @@ python scripts/run_server.py
 [docs/INSTALL.md](docs/INSTALL.md) и в руководстве пользователя
 [docs/User_Guide_MaritimeRouteAI.pdf](docs/User_Guide_MaritimeRouteAI.pdf).
 
+### Обновление до последней версии
+
+Копия, полученная через `git clone`, обновляется на месте — остановите сервер
+(**Ctrl + C**) и в папке проекта выполните:
+
+```bash
+git pull
+pip install -r requirements.txt   # при активированном окружении .venv
+python scripts/run_server.py
+```
+
+База данных, файлы результатов в `outputs/results` и окружение `.venv`
+сохраняются. Копию, скачанную в виде ZIP-архива, нужно скачать заново
+(подробнее — [docs/INSTALL.md](docs/INSTALL.md), раздел 2.5).
+
 ## 5. Работа с приложением
 
 1. Дважды щёлкните по карте (сначала точка отправления, затем назначения),
