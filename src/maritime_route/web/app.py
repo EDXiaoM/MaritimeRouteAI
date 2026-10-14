@@ -79,6 +79,11 @@ from ..export.exporters import (
     route_to_geojson, route_to_pdf,
 )
 from ..model.inference import ModelNotTrainedError, ZoneClassifierService
+from ..export.results import (
+    RESULTS_DIR, list_results, result_path, save_comparison_result, save_route_result,
+)
+from ..routing.control import STATUS_TEXT, RunControl
+from ..routing.parameters import SearchParameters, parameter_spec
 from ..routing.planner import RoutePlanner, benchmark
 from ..storage.repository import RouteRepository
 from .tiles import cache_info as tile_cache_info, render_tile
@@ -121,6 +126,13 @@ class PlanRequest(BaseModel):
         simplification.
     persist : bool
         If true the finished plan is also written to the SQLite database.
+    via : list of [float, float]
+        Intermediate points the route must pass through, in order (at most
+        20); the route is planned leg by leg (version 1.3).
+    parameters : dict
+        Values set in the parameter panels of the interface
+        (:class:`~maritime_route.routing.parameters.SearchParameters`);
+        missing keys take their default, unknown keys give HTTP 422.
     """
 
     start_lat: float = Field(..., ge=-90, le=90)
@@ -132,6 +144,38 @@ class PlanRequest(BaseModel):
     speed_knots: float = Field(14.0, gt=0.1, le=60.0)
     simplify_km: float = Field(0.0, ge=0.0, le=200.0)
     persist: bool = True
+    via: List[List[float]] = Field(default_factory=list, max_length=20)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("via")
+    @classmethod
+    def _check_via(cls, value):
+        """Every intermediate point must be a valid ``[lat, lon]`` pair."""
+        for p in value:
+            if len(p) != 2 or not (-90 <= p[0] <= 90 and -180 <= p[1] <= 180):
+                raise ValueError(f"invalid intermediate point: {p}")
+        return value
+
+    @field_validator("parameters")
+    @classmethod
+    def _check_parameters(cls, value):
+        """Reject unknown parameter names and non-numeric values (HTTP 422)."""
+        SearchParameters.from_dict(value)
+        return value
+
+    def search_parameters(self) -> SearchParameters:
+        """The validated :class:`SearchParameters` of this request."""
+        return SearchParameters.from_dict(self.parameters)
+
+    def points(self) -> List[tuple]:
+        """Departure, intermediate points and destination as ``(lat, lon)``."""
+        return ([(self.start_lat, self.start_lon)] + [tuple(p) for p in self.via]
+                + [(self.end_lat, self.end_lon)])
+
+    def summary(self) -> Dict[str, Any]:
+        """Request values written to the result file."""
+        return {"resolution_deg": self.resolution_deg, "speed_knots": self.speed_knots,
+                "simplify_km": self.simplify_km}
 
     @field_validator("algorithm")
     @classmethod
@@ -703,15 +747,10 @@ def create_app() -> FastAPI:
         """
         planner = STATE.ensure_model()
         plan, _ = await asyncio.to_thread(
-            planner.plan,
-            (request.start_lat, request.start_lon),
-            (request.end_lat, request.end_lon),
-            request.algorithm, request.resolution_deg, request.speed_knots,
-            request.simplify_km,
+            planner.plan_via, request.points(), request.algorithm, request.resolution_deg,
+            request.speed_knots, request.simplify_km, None, request.search_parameters(),
         )
-        STATE.remember(plan)
-        if request.persist:
-            await asyncio.to_thread(STATE.repository.save_route, plan)
+        await asyncio.to_thread(_finish_plan, plan, request)
         return plan.to_dict()
 
     @app.post("/api/benchmark")
@@ -742,10 +781,62 @@ def create_app() -> FastAPI:
             503 if the model is missing; 422 for an invalid body.
         """
         planner = STATE.ensure_model()
-        return await asyncio.to_thread(
+        data = await asyncio.to_thread(
             benchmark, planner, (request.start_lat, request.start_lon),
             (request.end_lat, request.end_lon), request.resolution_deg,
+            request.search_parameters(),
         )
+        data["result_file"] = str(await asyncio.to_thread(save_comparison_result, data))
+        return data
+
+    @app.get("/api/parameters")
+    async def get_parameters() -> Dict:
+        """Parameters that the interface lets the user set, per method.
+
+        ``GET /api/parameters`` - the client builds its parameter panels from
+        this description (label, type, default, range, unit, help text), so
+        the parameters are defined in one place on the server
+        (:mod:`maritime_route.routing.parameters`).
+
+        Returns
+        -------
+        dict
+            ``groups`` (``common``, ``astar``, ``dijkstra``, ``dynamic``,
+            ``genetic``) with their fields, ``defaults`` and ``results_dir``.
+        """
+        return {**parameter_spec(), "defaults": SearchParameters().to_dict(),
+                "results_dir": str(RESULTS_DIR.resolve()), "statuses": STATUS_TEXT}
+
+    @app.get("/api/results")
+    async def get_results(limit: int = Query(30, ge=1, le=500)) -> Dict:
+        """The most recent JSON result files (newest first).
+
+        ``GET /api/results?limit=30``
+
+        Returns
+        -------
+        dict
+            ``directory`` (absolute path) and ``files``: name, absolute path,
+            size in kB and modification time of each file.
+        """
+        return {"directory": str(RESULTS_DIR.resolve()), "files": list_results(limit)}
+
+    @app.get("/api/results/{name}")
+    async def download_result(name: str):
+        """Download one result file. 下载结果文件。
+
+        ``GET /api/results/{name}`` - only names of files in the results
+        directory are accepted (no path separators).
+
+        Raises
+        ------
+        HTTPException
+            404 if there is no such file.
+        """
+        path = result_path(name)
+        if path is None:
+            raise HTTPException(404, "Result file not found")
+        return FileResponse(path, media_type="application/json", filename=name)
 
     @app.get("/api/routes")
     async def list_routes(limit: int = Query(30, ge=1, le=200)) -> Dict:
@@ -928,8 +1019,9 @@ def create_app() -> FastAPI:
         实时规划通道：客户端发送请求，服务端持续推送进度与结果。
 
         ``WS /ws/plan`` - all messages are JSON text frames. One connection
-        can serve any number of requests; requests are processed one after
-        another (a new message is read only after the previous job finished).
+        can serve any number of requests, one search at a time. The search
+        runs as a separate task, so the socket is still read while it runs:
+        this is what lets the user stop it (version 1.3).
 
         Protocol
         --------
@@ -950,6 +1042,13 @@ def create_app() -> FastAPI:
         ``{"action": "plan", <PlanRequest fields>, "include_overlay": bool}``
             Starts a planning job; see :func:`_ws_plan` for the frames
             ``started`` -> ``progress``* -> ``overlay``? -> ``result``.
+        ``{"action": "benchmark", <PlanRequest fields>}``
+            Compares all methods on one cost map; frames ``started`` ->
+            ``progress``* -> ``benchmark`` (see :func:`_ws_benchmark`).
+        ``{"action": "cancel"}``
+            Stops the running search (Stop button). Answered with
+            ``{"type": "cancelling"}``; the job then ends with its normal
+            ``result`` / ``benchmark`` frame whose status is ``cancelled``.
         any other ``action``
             Answered with ``{"type": "error", "detail": "unknown action '...'"}``;
             the connection stays open.
@@ -970,6 +1069,10 @@ def create_app() -> FastAPI:
         # callback runs in a worker thread and must post frames back to it.
         # 记录事件循环，供工作线程中的进度回调跨线程投递消息。
         loop = asyncio.get_running_loop()
+        # The search of this connection: it runs as a separate task, so that
+        # this loop keeps reading the socket and can receive "cancel".
+        # 当前连接的搜索任务在单独的协程中运行，主循环继续读取消息以便接收“停止”。
+        job: Dict[str, Any] = {"task": None, "control": None}
         try:
             await websocket.send_json({"type": "hello", "version": APP_VERSION,
                                        "zones": [{"code": c, "colour": CLASS_COLOR_DARK[c]}
@@ -977,21 +1080,41 @@ def create_app() -> FastAPI:
             while True:
                 message = await websocket.receive_json()
                 action = message.get("action", "plan")
+                running = job["task"] is not None and not job["task"].done()
 
                 if action == "ping":
                     await websocket.send_json({"type": "pong", "t": time.time()})
+                    continue
+
+                if action == "cancel":
+                    # Stop button: the worker thread sees the flag at its next
+                    # check and returns a plan with status "cancelled".
+                    if running and job["control"] is not None:
+                        job["control"].cancel()
+                        await websocket.send_json({"type": "cancelling",
+                                                   "elapsed_s": round(job["control"].elapsed_s, 2)})
+                    else:
+                        await websocket.send_json({"type": "error",
+                                                   "detail": "no search is running"})
                     continue
 
                 if action == "classify":
                     await _ws_classify(websocket, message)
                     continue
 
-                if action != "plan":
+                if action not in ("plan", "benchmark"):
                     await websocket.send_json({"type": "error",
                                                "detail": f"unknown action '{action}'"})
                     continue
 
-                await _ws_plan(websocket, loop, message)
+                if running:
+                    await websocket.send_json({"type": "error", "detail": (
+                        "a search is already running - wait for it or press Stop")})
+                    continue
+                control = RunControl()
+                job["control"] = control
+                worker = _ws_plan if action == "plan" else _ws_benchmark
+                job["task"] = asyncio.create_task(worker(websocket, loop, message, control))
 
         except WebSocketDisconnect:
             LOGGER.info("WebSocket client disconnected")
@@ -1003,6 +1126,11 @@ def create_app() -> FastAPI:
                 await websocket.send_json({"type": "error", "detail": str(exc)})
             except Exception:
                 pass
+        finally:
+            # A closed browser tab must not leave a search running in the
+            # thread pool. 客户端断开时停止其仍在运行的搜索。
+            if job["control"] is not None:
+                job["control"].cancel()
 
     return app
 
@@ -1053,7 +1181,94 @@ async def _ws_classify(websocket: WebSocket, message: Dict) -> None:
                                "results": [r.to_dict() for r in results]})
 
 
-async def _ws_plan(websocket: WebSocket, loop: asyncio.AbstractEventLoop, message: Dict) -> None:
+def _finish_plan(plan, request: "PlanRequest") -> None:
+    """Write the result file, keep the plan for export and store it.
+
+    Called for *every* outcome - found, not found, step limit, stopped by the
+    user or by the time limit - so that each search leaves a JSON file
+    (:mod:`maritime_route.export.results`). The absolute path is put into
+    ``plan.result_file`` and therefore reaches the interface.
+    保存结果文件（任何结果都保存）、缓存航线并写入数据库。
+    """
+    try:
+        plan.result_file = str(save_route_result(plan, request.summary()))
+    except OSError as exc:                               # pragma: no cover - disk full etc.
+        LOGGER.warning("Result file not written: %s", exc)
+    STATE.remember(plan)
+    if request.persist:
+        STATE.repository.save_route(plan)
+
+
+def _parse_request(message: Dict) -> "PlanRequest":
+    """Validate the ``PlanRequest`` fields of a WebSocket message."""
+    # Keep only PlanRequest fields (action, include_overlay are not fields).
+    # 只保留 PlanRequest 字段，再交给 Pydantic 校验。
+    return PlanRequest(**{k: v for k, v in message.items() if k in PlanRequest.model_fields})
+
+
+async def _run_in_thread(websocket: WebSocket, loop: asyncio.AbstractEventLoop,
+                         control: RunControl, work):
+    """Run ``work(progress)`` in a worker thread and stream its progress frames.
+
+    ``work`` is a blocking function that receives the progress callback.
+    Progress frames carry ``elapsed_s`` (seconds since the start of the
+    search) for the timer of the interface.
+
+    Threading
+    ---------
+    The planner is synchronous and CPU-bound, so it runs in a thread via
+    :func:`asyncio.to_thread`. Its progress callback executes in that thread,
+    where calling ``websocket.send_json`` (a coroutine bound to the event loop)
+    is not allowed. The callback therefore only puts the frame into an
+    :class:`asyncio.Queue` using ``loop.call_soon_threadsafe`` (asyncio queues
+    are not thread-safe themselves), and this coroutine drains the queue and
+    sends the frames.
+    工作线程不能直接调用 send_json，只能通过 call_soon_threadsafe 把消息放入队列，
+    再由协程从队列取出并发送。
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    # Mutable holder (dict) so the nested callback can update the timestamp
+    # without a ``nonlocal`` declaration. 用字典保存时间戳，便于闭包内修改。
+    last_sent = {"t": 0.0}
+
+    def progress(stage: str, fraction: float, detail: Dict) -> None:
+        """Called from the worker thread; throttled to the configured interval.
+
+        At most one frame per ``SERVER.progress_interval_s`` (0.15 s) is
+        forwarded, so a search that reports thousands of expansions does not
+        flood the socket. ``"done"``, ``"cost_map"``, ``"refine"``, ``"coast"``
+        and ``"stopped"`` frames are always forwarded.
+        按时间间隔节流，但关键阶段总是发送。
+        """
+        now = time.monotonic()
+        if (stage not in ("done", "cost_map", "refine", "coast", "stopped")
+                and now - last_sent["t"] < SERVER.progress_interval_s):
+            return
+        last_sent["t"] = now
+        # Thread-safe hand-over: put_nowait itself runs later on the loop thread.
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            {"type": "progress", "stage": stage, "progress": round(float(fraction), 4),
+             "elapsed_s": round(control.elapsed_s, 2), "detail": _jsonable(detail)},
+        )
+
+    task = asyncio.create_task(asyncio.to_thread(work, progress))
+    # Forward progress frames while the job runs. The 0.1 s timeout lets the
+    # loop re-check ``task.done()``; the ``queue.empty()`` condition makes sure
+    # frames queued just before the job finished are still delivered.
+    # 任务运行期间循环转发进度；任务结束后继续发送队列中剩余的消息。
+    while not task.done() or not queue.empty():
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=0.1)
+            await websocket.send_json(frame)
+        except asyncio.TimeoutError:
+            continue
+    # Awaiting the finished task returns its value or re-raises its exception.
+    return await task
+
+
+async def _ws_plan(websocket: WebSocket, loop: asyncio.AbstractEventLoop, message: Dict,
+                   control: Optional[RunControl] = None) -> None:
     """Run a planning job in a worker thread, streaming progress frames.
 
     Implements the ``"plan"`` WebSocket action.
@@ -1067,142 +1282,125 @@ async def _ws_plan(websocket: WebSocket, loop: asyncio.AbstractEventLoop, messag
         runs in a worker thread, uses it to hand frames over safely.
     message : dict
         Client message. Keys that are fields of :class:`PlanRequest` are
-        validated by it; unknown keys (``action``, ``include_overlay``) are
-        filtered out first. ``include_overlay`` (default ``True``) selects
+        validated by it; ``include_overlay`` (default ``True``) selects
         whether the classified lattice is sent back.
+    control : RunControl, optional
+        Stop flag of this job (set by the ``cancel`` action); its time limit
+        is taken from the request parameters.
 
     Notes
     -----
     Frames sent to the client, in order:
 
-    1. ``{"type": "started", "algorithm": str, "resolution_deg": float}``
+    1. ``{"type": "started", "algorithm": str, "resolution_deg": float,
+       "time_limit_s": float, "parameters": dict}``
     2. zero or more ``{"type": "progress", "stage": str, "progress": float,
-       "detail": dict}`` frames. ``stage`` is one of ``"grid"``,
-       ``"classify"`` (``detail`` has ``cells_done`` / ``cells_total``),
-       ``"cost_map"`` (``detail`` = cost-map statistics), ``"search"``,
-       ``"astar"`` / ``"dijkstra"`` / ``"genetic"`` (search progress),
-       ``"refine"`` (the lattice is refined and planning restarts) and
-       ``"done"``. ``progress`` is a fraction in [0, 1] for the current stage.
-    3. if ``include_overlay``: ``{"type": "overlay", "cells": [{"lat", "lon",
-       "c", "p"}, ...], "step": int, "cell_size_deg": float, "grid": {...}}``
-       where ``c`` is the class index and ``p`` the mean confidence of a
-       down-sampled block (at most about 6 000 cells).
-    4. ``{"type": "result", "plan": RoutePlan.to_dict()}``.
+       "elapsed_s": float, "detail": dict}`` frames. ``stage`` is one of
+       ``"grid"``, ``"classify"`` (``detail`` has ``cells_done`` /
+       ``cells_total``), ``"cost_map"``, ``"search"``, ``"astar"`` /
+       ``"dijkstra"`` / ``"dynamic"`` / ``"genetic"`` (search progress),
+       ``"refine"``, ``"coast"``, ``"leg"`` (multi-leg route), ``"stopped"``
+       and ``"done"``.
+    3. if ``include_overlay`` and a cost map exists: ``{"type": "overlay",
+       "cells": [{"lat", "lon", "c", "p"}, ...], "step": int,
+       "cell_size_deg": float, "grid": {...}}``.
+    4. ``{"type": "result", "plan": RoutePlan.to_dict(), "result_file": str}``
+       - also for a route that was not found or was stopped (``plan.status``).
 
     Instead of this sequence a single ``{"type": "error", "detail": str}`` is
     sent when the request is invalid or the model is missing; if the planner
     raises, ``error`` is sent after the progress frames already delivered.
-
-    Threading
-    ---------
-    ``planner.plan`` is synchronous and CPU-bound, so it runs in a thread via
-    :func:`asyncio.to_thread`. Its progress callback executes in that thread,
-    where calling ``websocket.send_json`` (a coroutine bound to the event loop)
-    is not allowed. The callback therefore only puts the frame into an
-    :class:`asyncio.Queue` using ``loop.call_soon_threadsafe`` (asyncio queues
-    are not thread-safe themselves), and this coroutine drains the queue and
-    sends the frames.
-    工作线程不能直接调用 send_json，只能通过 call_soon_threadsafe 把消息放入队列，
-    再由协程从队列取出并发送。
     """
     try:
-        # Keep only PlanRequest fields; extra keys would otherwise be ignored
-        # silently by Pydantic anyway, but filtering keeps the intent explicit.
-        # 只保留 PlanRequest 字段，再交给 Pydantic 校验。
-        request = PlanRequest(**{k: v for k, v in message.items()
-                                 if k in PlanRequest.model_fields})
+        request = _parse_request(message)
+        params = request.search_parameters()
     except Exception as exc:
         await websocket.send_json({"type": "error", "detail": f"invalid request: {exc}"})
         return
-
     try:
         planner = STATE.ensure_model()
     except HTTPException as exc:
         await websocket.send_json({"type": "error", "detail": str(exc.detail)})
         return
 
-    queue: asyncio.Queue = asyncio.Queue()
-    # Mutable holder (dict) so the nested callback can update the timestamp
-    # without a ``nonlocal`` declaration. 用字典保存时间戳，便于闭包内修改。
-    last_sent = {"t": 0.0}
+    control = control or RunControl()
+    control.time_limit_s = params.time_limit_s or None
+    control.restart_clock()
+    await websocket.send_json({"type": "started", "kind": "plan", "algorithm": request.algorithm,
+                               "resolution_deg": request.resolution_deg,
+                               "time_limit_s": params.time_limit_s,
+                               "n_points": len(request.points()),
+                               "parameters": params.for_algorithm(request.algorithm)})
 
-    def progress(stage: str, fraction: float, detail: Dict) -> None:
-        """Called from the worker thread; throttled to the configured interval.
-
-        Parameters
-        ----------
-        stage : str
-            Planning stage name (see :func:`_ws_plan` notes).
-        fraction : float
-            Progress of the stage in [0, 1].
-        detail : dict
-            Stage-specific data; may contain NumPy values, which are converted
-            by :func:`_jsonable`.
-
-        Notes
-        -----
-        At most one frame per ``SERVER.progress_interval_s`` (0.15 s) is
-        forwarded, so a search that reports thousands of expansions does not
-        flood the socket. ``"done"`` and ``"cost_map"`` frames are always
-        forwarded because the client needs them (final state, statistics).
-        按时间间隔节流，但 done 与 cost_map 两个阶段总是发送。
-        """
-        now = time.monotonic()
-        if stage not in ("done", "cost_map") and now - last_sent["t"] < SERVER.progress_interval_s:
-            return
-        last_sent["t"] = now
-        # Thread-safe hand-over: put_nowait itself runs later on the loop thread.
-        # 线程安全地把消息交给事件循环线程执行 put_nowait。
-        loop.call_soon_threadsafe(
-            queue.put_nowait,
-            {"type": "progress", "stage": stage,
-             "progress": round(float(fraction), 4), "detail": _jsonable(detail)},
-        )
-
-    await websocket.send_json({"type": "started", "algorithm": request.algorithm,
-                               "resolution_deg": request.resolution_deg})
-
-    def work():
+    def work(progress):
         """Blocking planning call executed in the worker thread."""
-        return planner.plan(
-            (request.start_lat, request.start_lon), (request.end_lat, request.end_lon),
-            request.algorithm, request.resolution_deg, request.speed_knots,
-            request.simplify_km, progress=progress,
-        )
-
-    task = asyncio.create_task(asyncio.to_thread(work))
-    # Forward progress frames while the job runs. The 0.1 s timeout lets the
-    # loop re-check ``task.done()``; the ``queue.empty()`` condition makes sure
-    # frames queued just before the job finished are still delivered.
-    # 任务运行期间循环转发进度；超时 0.1 秒用于重新检查任务状态，
-    # 任务结束后继续发送队列中剩余的消息。
-    while not task.done() or not queue.empty():
-        try:
-            frame = await asyncio.wait_for(queue.get(), timeout=0.1)
-            await websocket.send_json(frame)
-        except asyncio.TimeoutError:
-            continue
+        plan, cost_map = planner.plan_via(
+            request.points(), request.algorithm, request.resolution_deg, request.speed_knots,
+            request.simplify_km, progress=progress, params=params, control=control)
+        _finish_plan(plan, request)
+        return plan, cost_map
 
     try:
-        # Awaiting the finished task returns its value or re-raises its exception.
-        # 等待已完成的任务：返回结果或重新抛出线程中的异常。
-        plan, cost_map = await task
+        plan, cost_map = await _run_in_thread(websocket, loop, control, work)
     except Exception as exc:
         LOGGER.exception("Planning failed")
         await websocket.send_json({"type": "error", "detail": str(exc)})
         return
 
-    STATE.remember(plan)
-    if request.persist:
-        await asyncio.to_thread(STATE.repository.save_route, plan)
-
-    if message.get("include_overlay", True):
+    if message.get("include_overlay", True) and cost_map is not None:
         # Down-sample the lattice to <= ~6000 cells so the browser can draw it.
         # 将分类网格降采样至约 6000 个单元供前端绘制。
         overlay = cost_map.to_overlay(max_cells=6000)
         await websocket.send_json({"type": "overlay", **overlay,
                                    "grid": cost_map.spec.to_dict()})
-    await websocket.send_json({"type": "result", "plan": plan.to_dict()})
+    await websocket.send_json({"type": "result", "plan": plan.to_dict(),
+                               "result_file": plan.result_file})
+
+
+async def _ws_benchmark(websocket: WebSocket, loop: asyncio.AbstractEventLoop, message: Dict,
+                        control: Optional[RunControl] = None) -> None:
+    """Compare all methods on one cost map, with progress and Stop.
+
+    Implements the ``"benchmark"`` WebSocket action (version 1.3; the REST
+    endpoint ``POST /api/benchmark`` remains for scripts). The user's
+    parameters are applied; ``time_limit_s`` limits every method separately.
+
+    Frames: ``started`` (``kind="benchmark"``) -> ``progress``* ->
+    ``{"type": "benchmark", "data": dict, "result_file": str}``, where
+    ``data`` is the output of :func:`~maritime_route.routing.planner.benchmark`
+    and ``result_file`` the absolute path of the JSON comparison file.
+    """
+    try:
+        request = _parse_request(message)
+        params = request.search_parameters()
+        planner = STATE.ensure_model()
+    except HTTPException as exc:
+        await websocket.send_json({"type": "error", "detail": str(exc.detail)})
+        return
+    except Exception as exc:
+        await websocket.send_json({"type": "error", "detail": f"invalid request: {exc}"})
+        return
+    control = control or RunControl()
+    control.restart_clock()
+    await websocket.send_json({"type": "started", "kind": "benchmark",
+                               "resolution_deg": request.resolution_deg,
+                               "time_limit_s": params.time_limit_s})
+
+    def work(progress):
+        data = benchmark(planner, (request.start_lat, request.start_lon),
+                         (request.end_lat, request.end_lon), request.resolution_deg,
+                         params=params, control=control, progress=progress)
+        data["result_file"] = str(save_comparison_result(data))
+        return data
+
+    try:
+        data = await _run_in_thread(websocket, loop, control, work)
+    except Exception as exc:
+        LOGGER.exception("Comparison failed")
+        await websocket.send_json({"type": "error", "detail": str(exc)})
+        return
+    await websocket.send_json({"type": "benchmark", "data": _jsonable(data),
+                               "result_file": data["result_file"]})
 
 
 def _jsonable(value: Any) -> Any:
@@ -1210,7 +1408,7 @@ def _jsonable(value: Any) -> Any:
 
     Converts recursively: dicts and lists/tuples are walked, NumPy integers
     and floats become Python ``int``/``float``, arrays become nested lists and
-    positive infinity becomes ``None`` (JSON has no infinity). Other values
+    infinities and NaN become ``None`` (JSON has neither). Other values
     are returned unchanged.
 
     Parameters
@@ -1233,8 +1431,8 @@ def _jsonable(value: Any) -> Any:
         return float(value)
     if isinstance(value, np.ndarray):
         return value.tolist()
-    if isinstance(value, float) and value == float("inf"):
-        return None
+    if isinstance(value, float) and not np.isfinite(value):
+        return None                     # inf / nan: JSON has neither
     return value
 
 

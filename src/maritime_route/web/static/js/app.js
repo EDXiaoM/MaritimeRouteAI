@@ -4,7 +4,8 @@
  *
  * Place in the application: the main script of the single-page client
  * (index.html). It is loaded last, after vendor/leaflet/leaflet.js (global L),
- * js/api.js (globals Api, LiveChannel) and js/charts.js (global Charts), and
+ * js/i18n.js (globals I18N, t: interface texts in English, Russian and
+ * Chinese), js/api.js (globals Api, LiveChannel) and js/charts.js (global Charts), and
  * runs once when the page loads. It has no exports; everything it defines is
  * used inside this file.
  *
@@ -17,7 +18,9 @@
  *   live channel   WebSocket frame handlers (progress, overlay, result, error)
  *   render result  drawing the route and the summary tables
  *   actions        buttons, sliders, preset chips
- *   tabs, upload, model panel, legend, bootstrap
+ *   tabs, upload, model panel, legend, language, bootstrap
+ * Every text shown to the user goes through t(key) or I18N.server(text)
+ * (version 1.3); switching the language re-renders what is on the screen.
  * 本文件是前端主控脚本，按上述分区组织。
  * ========================================================================== */
 'use strict';
@@ -50,6 +53,12 @@ const ZONE_COLOURS = {
  * @property {boolean} liveBusy - True while a cursor 'classify' request is in flight;
  *   prevents sending a new one before the answer arrives. Cleared only by a
  *   'classified' frame.
+ * @property {number[][]} via - Intermediate points [[lat, lon], ...] in order (1.3).
+ * @property {boolean} viaMode - True while every map click adds a via point.
+ * @property {?Object} paramSpec - Parameter description from GET /api/parameters.
+ * @property {Object} params - Parameter values that differ from the defaults.
+ * @property {?string} job - Kind of the running search: 'plan' | 'benchmark' | null.
+ * @property {?number} jobStart - performance.now() when the search started (timer).
  */
 const State = {
   start: null,
@@ -59,6 +68,15 @@ const State = {
   uploadToken: null,
   layers: {},
   liveBusy: false,
+  via: [],
+  viaMode: false,
+  paramSpec: null,
+  params: {},
+  job: null,
+  jobStart: null,
+  // Kept to redraw the screen when the interface language changes (1.3).
+  wsState: null, lastFrame: null, lastDone: null, started: null,
+  bench: null, model: null, zones: null, upload: null,
 };
 
 /* ------------------------------------------------------------------ map */
@@ -96,10 +114,22 @@ const onboardLayer = L.tileLayer('/api/tiles/zones/{z}/{x}/{y}.png', {
 osmLayer.addTo(map);
 // Base-layer switcher (radio buttons); no optional overlays are listed ({}).
 // 底图切换控件（仅底图，无叠加层）。
-L.control.layers(
-  { 'OpenStreetMap (online)': osmLayer, 'On-board chart (offline)': onboardLayer },
-  {}, { position: 'topleft' }
-).addTo(map);
+// Rebuilt when the interface language changes (the names are translated).
+let layerControl = null;
+function buildLayerControl() {
+  if (layerControl) layerControl.remove();
+  // Attribution of the on-board chart in the interface language.
+  const before = onboardLayer.options.attribution;
+  onboardLayer.options.attribution = t('layer.onboardAttr');
+  if (map.hasLayer(onboardLayer) && map.attributionControl && before !== onboardLayer.options.attribution) {
+    map.attributionControl.removeAttribution(before).addAttribution(onboardLayer.options.attribution);
+  }
+  layerControl = L.control.layers(
+    { [t('layer.osm')]: osmLayer, [t('layer.onboard')]: onboardLayer },
+    {}, { position: 'topleft' }
+  ).addTo(map);
+}
+buildLayerControl();
 
 /* If the public tile service is unreachable, switch to the on-board chart.
    在线瓦片不可用时自动切换到离线底图。 */
@@ -132,6 +162,8 @@ State.layers.overlay  = L.layerGroup().addTo(map);
 State.layers.points   = L.layerGroup().addTo(map);
 State.layers.route    = L.layerGroup().addTo(map);
 State.layers.markers  = L.layerGroup().addTo(map);
+//   bench   - routes of all methods of the last comparison (version 1.3)
+State.layers.bench    = L.layerGroup().addTo(map);
 
 /* ------------------------------------------------------------ elements */
 /**
@@ -165,6 +197,17 @@ const els = {
   uploadReport: $('upload-report'), pointsExport: $('points-export'),
   dropzone: $('dropzone'), fileInput: $('file-input'), dropzoneText: $('dropzone-text'),
   cursorReadout: $('cursor-readout'), mapLegend: $('map-legend'), pickHint: $('pick-hint'),
+  // version 1.3
+  viaBlock: $('via-block'), viaList: $('via-list'),
+  btnPickStart: $('btn-pick-start'), btnPickEnd: $('btn-pick-end'), btnPickVia: $('btn-pick-via'),
+  btnSwap: $('btn-swap'), btnClearVia: $('btn-clear-via'),
+  paramsBody: $('params-body'), paramsChanged: $('params-changed'), btnParamsReset: $('btn-params-reset'),
+  timer: $('timer'), timerLimit: $('timer-limit'), btnStop: $('btn-stop'),
+  resultFile: $('result-file'), resultPath: $('result-path'), btnCopyPath: $('btn-copy-path'),
+  dlResult: $('dl-result'), statusBanner: $('status-banner'),
+  attempts: $('attempts'), attemptsBody: $('attempts-body'),
+  showBenchRoutes: $('show-bench-routes'),
+  resultsDir: $('results-dir'), resultsList: $('results-list'),
 };
 
 /* ------------------------------------------------------------- helpers */
@@ -185,7 +228,7 @@ const fmt = (v, digits = 1) =>
  * @returns {string}
  */
 const fmtInt = (v) =>
-  (v === null || v === undefined) ? '—' : Number(v).toLocaleString('en-US');
+  (v === null || v === undefined) ? '—' : Number(v).toLocaleString(I18N.locale);
 
 /**
  * Update a status pill in the header (text and colour class).
@@ -244,15 +287,24 @@ function setEndpoint(which, lat, lon) {
  */
 function redrawEndpoints() {
   State.layers.markers.clearLayers();
+  // Intermediate points: numbered yellow markers, draggable; a right click
+  // (or the × in the list) removes one. 途经点：可拖动的编号标记，右键删除。
+  State.via.forEach((p, i) => {
+    L.marker(p, { icon: markerIcon('#ffd166', String(i + 1)), draggable: true })
+      .on('dragend', (e) => { const q = e.target.getLatLng(); State.via[i] = [q.lat, q.lng]; redrawEndpoints(); })
+      .on('contextmenu', () => removeVia(i))
+      .bindTooltip(t('via.tooltip', { n: i + 1 })).addTo(State.layers.markers);
+  });
+  renderViaList();
   if (State.start) {
     L.marker(State.start, { icon: markerIcon('#7fe3b0', 'A'), draggable: true })
       .on('dragend', (e) => { const p = e.target.getLatLng(); setEndpoint('start', p.lat, p.lng); })
-      .bindTooltip('Departure').addTo(State.layers.markers);
+      .bindTooltip(t('marker.start')).addTo(State.layers.markers);
   }
   if (State.end) {
     L.marker(State.end, { icon: markerIcon('#ffb4b2', 'B'), draggable: true })
       .on('dragend', (e) => { const p = e.target.getLatLng(); setEndpoint('end', p.lat, p.lng); })
-      .bindTooltip('Destination').addTo(State.layers.markers);
+      .bindTooltip(t('marker.end')).addTo(State.layers.markers);
   }
 }
 
@@ -274,12 +326,59 @@ function readEndpointsFromInputs() {
  */
 map.on('click', (event) => {
   const { lat, lng } = event.latlng;
+  // Shift + click, or the "Add via point" mode, adds an intermediate point.
+  // Shift+点击或“添加途经点”模式下，点击添加途经点。
+  if (State.viaMode || (event.originalEvent && event.originalEvent.shiftKey)) {
+    State.via.push([lat, lng]);
+    redrawEndpoints();
+    updatePickHint();
+    return;
+  }
   setEndpoint(State.pickNext, lat, lng);
   State.pickNext = State.pickNext === 'start' ? 'end' : 'start';
-  els.pickHint.innerHTML = State.pickNext === 'start'
-    ? 'Next click sets the <b>departure</b>. Markers can also be dragged.'
-    : 'Next click sets the <b>destination</b>. Markers can also be dragged.';
+  updatePickHint();
 });
+
+/** Text of the hint line: what the next click on the chart will do. */
+function updatePickHint() {
+  els.pickHint.innerHTML = State.viaMode ? t('pick.via')
+    : t(State.pickNext === 'start' ? 'pick.start' : 'pick.end');
+  els.btnPickVia.classList.toggle('active', State.viaMode);
+}
+
+/** List of the via points under the coordinate inputs, with remove buttons. */
+function renderViaList() {
+  els.viaBlock.hidden = State.via.length === 0;
+  els.viaList.innerHTML = State.via.map((p, i) =>
+    `<li>${p[0].toFixed(4)}, ${p[1].toFixed(4)}<button data-i="${i}" title="${t('via.remove')}">×</button></li>`).join('');
+  els.viaList.querySelectorAll('button').forEach((b) =>
+    b.addEventListener('click', () => removeVia(Number(b.dataset.i))));
+}
+
+/** Remove via point i. @param {number} i - Index in State.via. */
+function removeVia(i) {
+  State.via.splice(i, 1);
+  redrawEndpoints();
+}
+
+els.btnPickStart.addEventListener('click', () => {
+  State.viaMode = false; State.pickNext = 'start'; updatePickHint();
+});
+els.btnPickEnd.addEventListener('click', () => {
+  State.viaMode = false; State.pickNext = 'end'; updatePickHint();
+});
+els.btnPickVia.addEventListener('click', () => {
+  State.viaMode = !State.viaMode; updatePickHint();
+});
+els.btnSwap.addEventListener('click', () => {
+  readEndpointsFromInputs();
+  const a = State.start, b = State.end;
+  setEndpoint('start', b[0], b[1]);
+  setEndpoint('end', a[0], a[1]);
+  State.via.reverse();
+  redrawEndpoints();
+});
+els.btnClearVia.addEventListener('click', () => { State.via = []; redrawEndpoints(); });
 
 /* ---------------------------------------------- live cursor read-out */
 /** Debounce timer id for the cursor classification. @type {?number} */
@@ -321,9 +420,10 @@ const channel = new LiveChannel('/ws/plan');
  * because LiveChannel always schedules a reconnect after a close.
  */
 channel.on('status', ({ state }) => {
-  if (state === 'open')  setStatus(els.wsStatus, 'live connection', 'pill-ok');
-  if (state === 'closed') setStatus(els.wsStatus, 'reconnecting…', 'pill-wait');
-  if (state === 'error')  setStatus(els.wsStatus, 'connection error', 'pill-bad');
+  State.wsState = state;
+  if (state === 'open')  setStatus(els.wsStatus, t('ws.open'), 'pill-ok');
+  if (state === 'closed') setStatus(els.wsStatus, t('ws.closed'), 'pill-wait');
+  if (state === 'error')  setStatus(els.wsStatus, t('ws.error'), 'pill-bad');
 });
 
 /**
@@ -336,10 +436,10 @@ channel.on('classified', (frame) => {
   State.liveBusy = false;
   const r = frame.results && frame.results[0];
   if (!r) return;
-  const depth = r.depth_m === null ? '' : ` · ${r.depth_m > 0 ? 'elev' : 'depth'} ${Math.abs(r.depth_m).toFixed(0)} m`;
+  const depth = r.depth_m === null ? '' : ` · ${t(r.depth_m > 0 ? 'read.elev' : 'read.depth')} ${Math.abs(r.depth_m).toFixed(0)} m`;
   els.cursorReadout.querySelector('.zone').innerHTML =
     `<i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;
-        background:${ZONE_COLOURS[r.class_code]}"></i>${r.class_code}
+        background:${ZONE_COLOURS[r.class_code]}"></i>${I18N.zone(r.class_code)}
      <span style="opacity:.7">${(r.confidence * 100).toFixed(0)}%${depth}</span>`;
 });
 
@@ -350,31 +450,90 @@ channel.on('classified', (frame) => {
  */
 channel.on('started', (frame) => {
   els.progressBlock.hidden = false;
-  els.btnPlan.disabled = true;
-  els.progressStage.textContent = `starting ${frame.algorithm.toUpperCase()}…`;
+  els.resultFile.hidden = true;
+  setBusy(frame.kind || 'plan');
+  els.progressStage.textContent = frame.kind === 'benchmark'
+    ? t('started.bench')
+    : t('started.plan', { alg: t('meth.' + frame.algorithm) });
   els.progressFill.style.width = '2%';
   els.progressPct.textContent = '0%';
   els.progressDetail.textContent = '';
+  State.started = frame;
+  showTimerLimit();
+  startTimer();
+});
+
+/** Time limit of the running (or last) search next to the timer. */
+function showTimerLimit() {
+  const frame = State.started;
+  if (!frame) return;
+  els.timerLimit.textContent = frame.time_limit_s
+    ? t('timer.limit', { s: frame.time_limit_s }) + (frame.kind === 'benchmark' ? t('timer.perMethod') : '')
+    : t('timer.noLimit');
+}
+
+/* ------------------------------------------------ timer and Stop (1.3) */
+/** setInterval id of the running timer. @type {?number} */
+let timerId = null;
+
+/** Format seconds as m:ss.s for the timer. @param {number} t @returns {string} */
+const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+
+/** Start the timer of the progress block (updated 10 times per second). */
+function startTimer() {
+  State.jobStart = performance.now();
+  clearInterval(timerId);
+  timerId = setInterval(() => {
+    els.timer.textContent = '⏱ ' + fmtClock((performance.now() - State.jobStart) / 1000);
+  }, 100);
+}
+
+/** Stop the timer and show the final time (the server's own measurement if given). */
+function stopTimer(seconds) {
+  clearInterval(timerId);
+  timerId = null;
+  const t = seconds ?? (State.jobStart ? (performance.now() - State.jobStart) / 1000 : 0);
+  els.timer.textContent = '⏱ ' + fmtClock(t);
+}
+
+/**
+ * Mark a search as running (or finished): the Plan and Compare buttons are
+ * disabled and the Stop button enabled while a search runs.
+ * @param {?string} kind - 'plan', 'benchmark' or null when finished.
+ */
+function setBusy(kind) {
+  State.job = kind;
+  els.btnPlan.disabled = !!kind;
+  els.btnBenchmark.disabled = !!kind;
+  els.btnStop.disabled = !kind;
+  els.btnStop.textContent = t('btn.stop');
+}
+
+/** Stop button: ask the server to stop the running search ('cancel' action). */
+els.btnStop.addEventListener('click', () => {
+  if (!State.job || !channel.isOpen) return;
+  channel.send({ action: 'cancel' });
+  els.btnStop.disabled = true;
+  els.btnStop.textContent = t('btn.stopping');
+});
+
+/** 'cancelling' frame: the server has set the stop flag. */
+channel.on('cancelling', () => {
+  els.progressStage.textContent = t('stopping');
 });
 
 /**
- * Human-readable labels for the `stage` field of 'progress' frames
- * (stage names are defined by the planner, cost-map builder and search modules).
+ * Human-readable label of the `stage` field of 'progress' frames (stage names
+ * are defined by the planner, cost-map builder and search modules): the key
+ * 'stage.<name>' of i18n.js (grid, classify, cost_map, search, astar,
+ * dijkstra, genetic, dynamic, refine, coast, leg, benchmark, stopped, done).
  * Unknown stages are shown with their raw name.
- * @type {Object<string, string>}
+ * @param {string} stage - Stage name.
+ * @returns {string}
  */
-const STAGE_TEXT = {
-  grid:     'Building geographic lattice',
-  classify: 'Neural network classifying grid cells',
-  cost_map: 'Cost map ready',
-  search:   'Searching optimal path',
-  astar:    'A* search in progress',
-  dijkstra: 'Dijkstra search in progress',
-  genetic:  'Genetic algorithm: evolving routes',
-  dynamic:  'Dynamic programming: solving the Bellman equation',
-  refine:   'Refining the lattice (narrow strait)',
-  coast:    'Coastline check: correcting the route',
-  done:     'Route ready',
+const stageText = (stage) => {
+  const s = t('stage.' + stage);
+  return s === 'stage.' + stage ? stage : s;
 };
 
 /**
@@ -391,29 +550,30 @@ const STAGE_TEXT = {
  */
 channel.on('progress', (frame) => {
   const pct = Math.round(frame.progress * 100);
-  els.progressStage.textContent = STAGE_TEXT[frame.stage] || frame.stage;
+  const d0 = frame.detail || {};
+  // Multi-leg route: the stage text names the leg. 多段航线：显示当前航段。
+  const legText = d0.legs > 1 ? t('prog.leg', { i: d0.leg, n: d0.legs }) : '';
+  els.progressStage.textContent = legText + stageText(frame.stage);
   els.progressFill.style.width = Math.max(pct, 2) + '%';
   els.progressPct.textContent = pct + '%';
   const d = frame.detail || {};
   if (d.cells_done !== undefined) {
-    els.progressDetail.textContent =
-      `${fmtInt(d.cells_done)} / ${fmtInt(d.cells_total)} cells classified`;
+    els.progressDetail.textContent = t('prog.cells', { a: fmtInt(d.cells_done), b: fmtInt(d.cells_total) });
   } else if (d.expanded !== undefined) {
-    els.progressDetail.textContent =
-      `${fmtInt(d.expanded)} nodes expanded · frontier ${fmtInt(d.frontier)}`;
+    els.progressDetail.textContent = t('prog.nodes', { a: fmtInt(d.expanded), b: fmtInt(d.frontier) });
   } else if (d.sweep !== undefined) {
     // Dynamic programming: value-iteration sweep and cells whose value changed.
-    els.progressDetail.textContent =
-      `sweep ${fmtInt(d.sweep)} · ${fmtInt(d.updated)} values improved`;
+    els.progressDetail.textContent = t('prog.sweep', { a: fmtInt(d.sweep), b: fmtInt(d.updated) });
+  } else if (d.method !== undefined) {
+    els.progressDetail.textContent = I18N.server(d.stage);
   } else if (d.generation !== undefined) {
     // Genetic algorithm: generation counter and best route cost so far.
-    els.progressDetail.textContent =
-      `generation ${fmtInt(d.generation)} · best cost ${fmt(d.best_cost, 0)}`;
+    els.progressDetail.textContent = t('prog.gen', { a: fmtInt(d.generation), b: fmt(d.best_cost, 0) });
   } else if (d.zone_shares) {
     els.progressDetail.textContent = Object.entries(d.zone_shares)
-      .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`).join(' · ');
+      .map(([k, v]) => `${I18N.zone(k)} ${(v * 100).toFixed(0)}%`).join(' · ');
   } else if (d.stage) {
-    els.progressDetail.textContent = d.stage;
+    els.progressDetail.textContent = I18N.server(d.stage);
   }
 });
 
@@ -449,14 +609,58 @@ channel.on('overlay', (frame) => {
  * database statistics (the route has just been stored).
  */
 channel.on('result', (frame) => {
-  els.btnPlan.disabled = false;
+  setBusy(null);
+  stopTimer(frame.plan.runtime_s);
   els.progressFill.style.width = '100%';
   els.progressPct.textContent = '100%';
-  els.progressStage.textContent = 'Route ready';
-  setTimeout(() => { els.progressBlock.hidden = true; }, 900);
+  State.lastFrame = frame; State.lastDone = 'plan';
+  showFinalProgress(frame.plan);
+  els.btnStop.disabled = true;
   renderPlan(frame.plan);
+  showResultFile(frame.result_file);
   loadHistory();
   loadDbStats();
+  loadResults();
+});
+
+/** Final line of the progress block (stage = outcome, detail = steps, lattices, time). */
+function showFinalProgress(plan) {
+  els.progressStage.textContent = statusText(plan.status) || t('stage.done');
+  els.progressDetail.textContent = t('prog.final', {
+    steps: fmtInt(plan.nodes_expanded), lat: (plan.attempts || []).length, s: fmt(plan.runtime_s, 2) });
+}
+
+/** Text of a search outcome (found, no_path, step_limit, cancelled, time_limit). */
+const statusText = (status) => (status ? t('status.' + status) : '');
+
+/**
+ * Show where the result file was written: absolute path (selectable), a Copy
+ * button and a download link (GET /api/results/{name}).
+ * 显示结果文件的位置，并提供复制路径与下载。
+ * @param {?string} path - Absolute path on the server's disk.
+ */
+function showResultFile(path) {
+  if (!path) { els.resultFile.hidden = true; return; }
+  const name = path.split(/[\\/]/).pop();
+  els.resultPath.textContent = path;
+  els.dlResult.href = `/api/results/${encodeURIComponent(name)}`;
+  els.dlResult.setAttribute('download', name);
+  els.resultFile.hidden = false;
+}
+
+els.btnCopyPath.addEventListener('click', async () => {
+  const text = els.resultPath.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    els.btnCopyPath.textContent = t('rf.copied');
+  } catch (err) {
+    // Clipboard API unavailable (plain http on another host): select the text.
+    const range = document.createRange();
+    range.selectNodeContents(els.resultPath);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    els.btnCopyPath.textContent = t('rf.ctrlc');
+  }
+  setTimeout(() => { els.btnCopyPath.textContent = t('rf.copy'); }, 1600);
 });
 
 /**
@@ -466,9 +670,11 @@ channel.on('result', (frame) => {
 channel.on('error', (frame) => {
   // A failed cursor read-out must not block the next one. 光标实时分类失败时解除占用标志。
   State.liveBusy = false;
-  els.btnPlan.disabled = false;
-  els.progressStage.textContent = 'Error';
-  els.progressDetail.textContent = frame.detail;
+  if (State.job) { setBusy(null); stopTimer(); els.progressBlock.hidden = false; }
+  els.btnStop.disabled = true;
+  State.lastFrame = null;
+  els.progressStage.textContent = t('error');
+  els.progressDetail.textContent = I18N.server(frame.detail);
   els.progressFill.style.width = '100%';
 });
 
@@ -491,17 +697,23 @@ channel.connect();
  * 在地图上绘制航线并填充结果摘要。
  *
  * @param {Object} plan - RoutePlan.to_dict() from the server (see app.py).
+ * @param {boolean} [keepView=false] - Do not zoom the map (language switch).
  */
-function renderPlan(plan) {
+function renderPlan(plan, keepView = false) {
   State.plan = plan;
   State.layers.route.clearLayers();
 
   renderCoastCheck(plan);
+  renderStatus(plan);
+  renderAttempts(plan);
   if (!plan.feasible || !plan.waypoints.length) {
     els.resultBlock.hidden = false;
     els.metricGrid.innerHTML =
-      `<div class="metric bad" style="grid-column:1/-1"><div class="label">Infeasible</div>
-       <div class="value" style="font-size:13px">${plan.message || 'No navigable route'}</div></div>`;
+      `<div class="metric bad" style="grid-column:1/-1"><div class="label">${statusText(plan.status) || t('res.infeasible')}</div>
+       <div class="value" style="font-size:13px">${I18N.server(plan.message) || t('res.noRoute')}</div></div>
+      ${metric(t('m.searchTime'), fmt(plan.runtime_s, 2), t('u.s'))}
+      ${metric(t('m.steps'), fmtInt(plan.nodes_expanded), '')}`;
+    $('dl-geojson').removeAttribute('href');
     return;
   }
 
@@ -529,7 +741,7 @@ function renderPlan(plan) {
   // Great-circle reference. 大圆参考航线。
   L.polyline([plan.start, plan.end], {
     color: '#ff5d5a', weight: 2.6, opacity: 0.95, dashArray: '8,6',
-  }).bindTooltip('Great-circle (shortest distance)').addTo(State.layers.route);
+  }).bindTooltip(t('tip.gc')).addTo(State.layers.route);
 
   // Points where the route still crosses land on the independent coastline
   // (only when the automatic correction could not remove them).
@@ -538,27 +750,28 @@ function renderPlan(plan) {
   if (cc.verdict === 'crossing' && plan.algorithm !== 'great_circle') {
     (cc.land_points || []).forEach((p) => {
       L.circleMarker(p, { radius: 4, color: '#ff2d55', weight: 2, fillOpacity: 0.85 })
-        .bindTooltip('Over land on the independent coastline').addTo(State.layers.route);
+        .bindTooltip(t('tip.land')).addTo(State.layers.route);
     });
   }
 
-  // Zoom to the route with 18 % padding on each side. 缩放至航线范围。
-  map.fitBounds(L.polyline(plan.waypoints).getBounds().pad(0.18));
+  // Zoom to the route with 18 % padding on each side (not when the page is
+  // only redrawn in another language). 缩放至航线范围（切换语言重绘时不缩放）。
+  if (!keepView) map.fitBounds(L.polyline(plan.waypoints).getBounds().pad(0.18));
 
   // Summary metric tiles. A detour ratio (route length / great-circle length)
   // above 1.5 is flagged with the 'warn' colour.
   // 结果指标；绕航系数大于 1.5 时以警示色显示。
   const detour = plan.detour_ratio;
   els.metricGrid.innerHTML = `
-    ${metric('Route length', fmt(plan.distance_km, 1), 'km')}
-    ${metric('Great circle', fmt(plan.great_circle_km, 1), 'km')}
-    ${metric('Detour ratio', fmt(detour, 3), '×', detour > 1.5 ? 'warn' : 'good')}
-    ${metric('Weighted cost', fmt(plan.total_cost, 0), '')}
-    ${metric('Passage time', fmt(plan.estimated_hours, 1), 'h')}
-    ${metric('Planning time', fmt(plan.runtime_s, 3), 's')}
-    ${metric({ genetic: 'Routes evaluated', dynamic: 'Bellman updates' }[plan.algorithm] || 'Nodes expanded',
+    ${metric(t('m.length'), fmt(plan.distance_km, 1), t('u.km'))}
+    ${metric(t('m.gc'), fmt(plan.great_circle_km, 1), t('u.km'))}
+    ${metric(t('m.detour'), fmt(detour, 3), '×', detour > 1.5 ? 'warn' : 'good')}
+    ${metric(t('m.cost'), fmt(plan.total_cost, 0), '')}
+    ${metric(t('m.passage'), fmt(plan.estimated_hours, 1), t('u.h'))}
+    ${metric(t('m.planning'), fmt(plan.runtime_s, 3), t('u.s'))}
+    ${metric(t({ genetic: 'm.evaluated', dynamic: 'm.updates' }[plan.algorithm] || 'm.nodes'),
              fmtInt(plan.nodes_expanded), '')}
-    ${metric('Waypoints', fmtInt(plan.waypoints.length), '')}`;
+    ${metric(t('m.waypoints'), fmtInt(plan.waypoints.length), '')}`;
 
   Charts.zoneBar(els.zoneBar, els.zoneLegend, plan.zone_profile, ZONE_COLOURS);
 
@@ -591,24 +804,64 @@ function renderCoastCheck(plan) {
   if (c.verdict === 'crossing') {
     box.className = 'verdict bad';
     box.textContent = plan.algorithm === 'great_circle'
-      ? `Coastline check: the great circle crosses land for ${fmt(c.max_land_run_km, 0)} km.`
-      : `⚠ ${plan.warning}`;
+      ? t('coast.gc', { km: fmt(c.max_land_run_km, 0) })
+      : t('coast.crossing', { km: fmt(c.max_land_run_km, 1) });
     return;
   }
   const corrected = c.initial_verdict === 'crossing';
   box.className = corrected ? 'verdict fixed' : 'verdict good';
   const how = [];
   if (c.corrections) {
-    how.push(`${c.corrections} re-search${c.corrections > 1 ? 'es' : ''}, ` +
-             `${c.cells_blocked} cell${c.cells_blocked === 1 ? '' : 's'} blocked`);
+    how.push(t('coast.how.re', { n: c.corrections, c: c.cells_blocked }));
   }
-  if (c.refined) how.push(`finer lattice ${plan.grid.resolution_deg}°`);
+  if (c.refined) how.push(t('coast.how.fine', { r: plan.grid.resolution_deg }));
   box.textContent = corrected
-    ? `Coastline check: the first route crossed land for ${fmt(c.initial_max_land_run_km, 0)} km ` +
-      `and was corrected automatically (${how.join('; ')}). The final route passes the check.`
-    : `Coastline check passed: ${c.verdict === 'clear' ? 'no land on the route'
-        : `touches the coast for at most ${fmt(c.max_land_run_km, 0)} km`} ` +
-      `(independent 1 km land mask, ${fmtInt(c.samples)} samples).`;
+    ? t('coast.fixed', { km: fmt(c.initial_max_land_run_km, 0), how: how.join('; ') })
+    : t('coast.passed', {
+        what: c.verdict === 'clear' ? t('coast.clear') : t('coast.touch', { km: fmt(c.max_land_run_km, 0) }),
+        n: fmtInt(c.samples) });
+}
+
+/**
+ * Banner with the outcome of a search that did not find a route (version 1.3):
+ * step limit, time limit, stopped by the user, no path - with a hint on
+ * which parameter to change. Hidden for a found route.
+ * 未找到航线时的状态说明及参数调整提示。
+ * @param {Object} plan - RoutePlan.to_dict().
+ */
+function renderStatus(plan) {
+  const box = els.statusBanner;
+  // Which parameter to change: per method for the step limit (keys hint.<method>),
+  // one hint for the other outcomes (hint.time_limit, hint.cancelled, hint.no_path).
+  if (plan.feasible || plan.status === 'found') { box.hidden = true; return; }
+  const key = plan.status === 'step_limit' ? 'hint.' + plan.algorithm : 'hint.' + plan.status;
+  const hint = t(key) === key ? '' : t(key);
+  box.className = 'verdict ' + (plan.status === 'no_path' ? 'bad' : 'fixed');
+  box.innerHTML = t('status.after', { st: statusText(plan.status) || plan.status, s: fmt(plan.runtime_s, 1), hint });
+  box.hidden = false;
+}
+
+/**
+ * "How the route was found": one row per lattice tried by the planner -
+ * cell size, cells, steps, time and outcome - so that the work on a complex
+ * course (refinement, wider area, corridor, legs) is visible.
+ * 规划过程表：每一次尝试的网格、格子数、步数、耗时与结果。
+ * @param {Object} plan - RoutePlan.to_dict().
+ */
+function renderAttempts(plan) {
+  const rows = plan.attempts || [];
+  els.attempts.hidden = rows.length === 0;
+  if (!rows.length) return;
+  els.attemptsBody.innerHTML = `<table class="bench-table">
+    <tr><th>#</th><th>${t('att.leg')}</th><th>${t('att.cell')}</th><th>${t('att.cells')}</th>
+      <th>${t('att.steps')}</th><th>${t('att.s')}</th><th>${t('att.outcome')}</th></tr>
+    ${rows.map((a) => `<tr><td>${a.attempt}${a.corridor_km ? ' ⟂' : ''}</td><td>${a.leg || 1}</td>
+      <td>${a.resolution_deg}</td><td>${fmtInt(a.cells)}</td><td>${fmtInt(a.steps)}</td>
+      <td>${fmt(a.seconds, 2)}</td>
+      <td><span class="status-tag status-${a.status}">${t('tag.' + a.status)}</span>${a.coast_verdict === 'crossing' ? t('att.land') : ''}</td></tr>
+      ${a.next ? `<tr><td></td><td colspan="6" style="text-align:left;color:var(--muted)">→ ${I18N.server(a.next)}</td></tr>` : ''}`).join('')}
+  </table>
+  <div class="muted" style="margin-top:4px">${t('att.note')}</div>`;
 }
 
 /**
@@ -641,22 +894,42 @@ function metric(label, value, unit, cls = '') {
 function renderComparison(plan) {
   const b = plan.baseline || {};
   const navigable = b.is_navigable;
+  const cv = (plan.coast_check || {}).verdict;
+  const km = t('u.km');
   els.compareBlock.innerHTML = `
     <table>
-      <tr><td>Great-circle length</td><td>${fmt(b.distance_km, 1)} km</td></tr>
-      <tr><td>Optimised length</td><td>${fmt(plan.distance_km, 1)} km</td></tr>
-      <tr><td>Additional distance</td><td>${fmt(b.extra_distance_pct, 2)} %</td></tr>
-      <tr><td>Samples over land</td><td>${b.land_samples} / ${b.samples}</td></tr>
-      <tr><td>Share over land</td><td>${fmt((b.land_share || 0) * 100, 1)} %</td></tr>
-      <tr><td>Optimised: intermediate waypoints over land</td>
+      <tr><td>${t('c.gcLen')}</td><td>${fmt(b.distance_km, 1)} ${km}</td></tr>
+      <tr><td>${t('c.optLen')}</td><td>${fmt(plan.distance_km, 1)} ${km}</td></tr>
+      <tr><td>${t('c.extra')}</td><td>${fmt(b.extra_distance_pct, 2)} %</td></tr>
+      <tr><td>${t('c.samples')}</td><td>${b.land_samples} / ${b.samples}</td></tr>
+      <tr><td>${t('c.share')}</td><td>${fmt((b.land_share || 0) * 100, 1)} %</td></tr>
+      <tr><td>${t('c.interior')}</td>
           <td>${plan.interior_land_waypoints}</td></tr>
-      <tr><td>Optimised: coastline check (1 km land mask)</td>
-          <td>${(plan.coast_check || {}).verdict || '-'}${(plan.coast_check || {}).max_land_run_km
-               ? `, longest land stretch ${fmt(plan.coast_check.max_land_run_km, 1)} km` : ''}</td></tr>
-      <tr><td>Optimised: waypoints in total</td><td>${fmtInt(plan.waypoints.length)}</td></tr>
-      <tr><td>Passage time saved/lost</td><td>${fmt(plan.estimated_hours - (b.distance_km / (plan.speed_knots * 1.852)), 1)} h</td></tr>
+      <tr><td>${t('c.coast')}</td>
+          <td>${cv ? t('verdict.' + cv) : '-'}${(plan.coast_check || {}).max_land_run_km
+               ? t('c.longest', { km: fmt(plan.coast_check.max_land_run_km, 1) }) : ''}</td></tr>
+      <tr><td>${t('c.wps')}</td><td>${fmtInt(plan.waypoints.length)}</td></tr>
+      <tr><td>${t('c.time')}</td><td>${fmt(plan.estimated_hours - (b.distance_km / (plan.speed_knots * 1.852)), 1)} ${t('u.h')}</td></tr>
     </table>
-    <div class="verdict ${navigable ? 'good' : 'bad'}">${b.verdict || ''}</div>`;
+    <div class="verdict ${navigable ? 'good' : 'bad'}">${baselineVerdict(b)}</div>`;
+}
+
+/**
+ * Conclusion about the great circle in the current language. The server
+ * sends it in English; for a route with via points it lists the legs
+ * ("Great circles of the individual legs: navigable, crosses land").
+ * @param {Object} b - plan.baseline.
+ * @returns {string}
+ */
+function baselineVerdict(b) {
+  const v = b.verdict || '';
+  const legs = v.match(/^Great circles of the individual legs: (.*)$/);
+  if (legs) {
+    return t('c.legs', { list: legs[1].split(', ')
+      .map((x) => t(x === 'navigable' ? 'c.nav' : 'c.crossesLand')).join(', ') });
+  }
+  if (!v) return '';
+  return t(b.is_navigable ? 'c.gcNav' : 'c.gcLand');
 }
 
 /* ------------------------------------------------------------ actions */
@@ -678,6 +951,8 @@ function planRequest() {
     action: 'plan',
     start_lat: State.start[0], start_lon: State.start[1],
     end_lat: State.end[0],     end_lon: State.end[1],
+    via: State.via,                                  // intermediate points (1.3)
+    parameters: { ...State.params },                 // values changed in the panels (1.3)
     algorithm: els.algorithm.value,
     resolution_deg: parseFloat(els.resolution.value),
     speed_knots: parseFloat(els.speed.value),
@@ -695,17 +970,19 @@ function planRequest() {
 els.btnPlan.addEventListener('click', () => {
   const request = planRequest();
   if ([request.start_lat, request.start_lon, request.end_lat, request.end_lon].some(Number.isNaN)) {
-    alert('Please set both the departure and the destination.');
+    alert(t('alert.points'));
     return;
   }
+  State.layers.bench.clearLayers();
   if (channel.isOpen) {
     channel.send(request);
   } else {
-    // Fall back to REST when the socket is down. WebSocket 不可用时退回 REST。
+    // Fall back to REST when the socket is down (no progress, no Stop).
+    // WebSocket 不可用时退回 REST（无进度、不能停止）。
     els.btnPlan.disabled = true;
     Api.plan(request)
-      .then(renderPlan)
-      .catch((err) => alert('Planning failed: ' + err.message))
+      .then((plan) => { renderPlan(plan); showResultFile(plan.result_file); })
+      .catch((err) => alert(t('alert.planFailed') + err.message))
       .finally(() => { els.btnPlan.disabled = false; });
   }
 });
@@ -720,33 +997,104 @@ els.btnPlan.addEventListener('click', () => {
  */
 els.btnBenchmark.addEventListener('click', async () => {
   const request = planRequest();
-  els.btnBenchmark.disabled = true;
-  els.benchmarkBlock.textContent = 'running five methods on one shared cost map…';
+  State.bench = null;
+  els.benchmarkBlock.textContent = t('bench.running');
   // Programmatic click on the tab button reuses the tab-switch handler.
   document.querySelector('[data-tab="compare"]').click();
+  if (channel.isOpen) {
+    // Over the WebSocket: progress, timer and Stop work as for one route (1.3).
+    channel.send({ ...request, action: 'benchmark' });
+    return;
+  }
+  els.btnBenchmark.disabled = true;
   try {
-    const data = await Api.benchmark(request);
-    els.benchmarkBlock.innerHTML = `
-      <table>
-        <tr><td><b>Algorithm</b></td><td><b>km / cost / nodes / search s</b></td></tr>
-        ${data.results.map((r) => `<tr><td>${r.algorithm}${r.feasible ? '' : ' ⚠'}</td><td>
-          ${fmt(r.distance_km, 0)} / ${r.total_cost === null ? '—' : fmt(r.total_cost, 0)} /
-          ${fmtInt(r.nodes_expanded)} / ${fmt(r.runtime_s, 3)}</td></tr>`).join('')}
-        <tr><td>A* node reduction vs Dijkstra</td><td>${data.astar_node_reduction ?? '—'}×</td></tr>
-        <tr><td>A* speed-up (time)</td><td>${data.astar_time_ratio ?? '—'}×</td></tr>
-        <tr><td>Cost difference A* vs Dijkstra</td><td>${data.optimality_gap_pct ?? '—'} %</td></tr>
-        <tr><td>Genetic algorithm above the optimum</td><td>${data.genetic_gap_pct ?? '—'} %</td></tr>
-        <tr><td>Cost difference DP vs A*</td><td>${data.dynamic_gap_pct ?? '—'} %</td></tr>
-        <tr><td>Cost map build</td><td>${fmt(data.cost_map_build_s, 3)} s (shared)</td></tr>
-        <tr><td>Grid</td><td>${data.grid.n_rows}×${data.grid.n_cols} @ ${data.grid.resolution_deg}°</td></tr>
-      </table>
-      <div class="muted" style="margin-top:6px">Runtimes exclude the shared cost-map
-      construction, so they compare the search algorithms only.</div>`;
+    renderBenchmark(await Api.benchmark(request));
   } catch (err) {
-    els.benchmarkBlock.textContent = 'Benchmark failed: ' + err.message;
+    els.benchmarkBlock.textContent = t('bench.failed') + err.message;
   } finally {
     els.btnBenchmark.disabled = false;
   }
+});
+
+/** Colours of the methods in the comparison table and on the chart. */
+const METHOD_COLOURS = {
+  astar: '#4da3ff', dijkstra: '#c77dff', dynamic: '#2a9d8f', genetic: '#ffb703', great_circle: '#ef6461',
+};
+/** Display name of a method in the current language (keys meth.<method>). */
+const methodName = (a) => t('meth.' + a);
+
+/** 'benchmark' frame (WebSocket comparison finished, possibly stopped). */
+channel.on('benchmark', (frame) => {
+  setBusy(null);
+  stopTimer(frame.data.total_seconds);
+  State.lastDone = 'bench';
+  els.progressStage.textContent = t(frame.data.status === 'cancelled' ? 'bench.stopped' : 'bench.finished');
+  els.progressFill.style.width = '100%';
+  els.progressPct.textContent = '100%';
+  renderBenchmark(frame.data);
+  showResultFile(frame.result_file);
+  loadResults();
+});
+
+/**
+ * Fill the comparison table: per method the status, length, cost, gap to the
+ * optimum, steps (and the step limit), search time, and the theoretical
+ * complexity with its worst-case bound; then the derived ratios. The routes
+ * are drawn on the chart in the colours of the table.
+ * 算法对比表：状态、长度、代价、与最优值差距、步数与上限、耗时及理论复杂度。
+ * @param {Object} data - Output of planner.benchmark (see app.py).
+ */
+function renderBenchmark(data) {
+  State.bench = data;                     // kept to redraw the table in another language
+  State.layers.bench.clearLayers();
+  const rows = data.results || [];
+  if (els.showBenchRoutes.checked) {
+    rows.forEach((r) => {
+      if (r.waypoints && r.waypoints.length > 1) {
+        L.polyline(r.waypoints, {
+          color: METHOD_COLOURS[r.algorithm], weight: r.algorithm === 'great_circle' ? 2 : 3.2,
+          opacity: 0.9, dashArray: r.algorithm === 'great_circle' ? '7,6' : null,
+        }).bindTooltip(methodName(r.algorithm)).addTo(State.layers.bench);
+      }
+    });
+  }
+  const sw = (a) => `<i class="bench-swatch" style="background:${METHOD_COLOURS[a]}"></i>`;
+  els.benchmarkBlock.innerHTML = `
+    <table class="bench-table">
+      <tr><th>${t('b.method')}</th><th>${t('b.status')}</th><th>${t('b.km')}</th><th>${t('b.cost')}</th>
+        <th>${t('b.opt')}</th><th>${t('b.steps')}</th><th>${t('b.limit')}</th><th>${t('b.s')}</th></tr>
+      ${rows.map((r) => `<tr><td>${sw(r.algorithm)}${methodName(r.algorithm)}</td>
+        <td><span class="status-tag status-${r.status}">${t('tag.' + (r.feasible || r.status !== 'found' ? r.status : 'land'))}</span></td>
+        <td>${fmt(r.distance_km, 0)}</td><td>${r.total_cost === null || r.total_cost === undefined ? '—' : fmt(r.total_cost, 0)}</td>
+        <td>${r.gap_to_optimum_pct === null || r.gap_to_optimum_pct === undefined ? '—' : fmt(r.gap_to_optimum_pct, 2)}</td>
+        <td>${fmtInt(r.nodes_expanded)}</td><td>${r.step_limit ? fmtInt(r.step_limit) : '—'}</td>
+        <td>${fmt(r.runtime_s, 3)}</td></tr>`).join('')}
+    </table>
+    <h4>${t('b.complexity')}</h4>
+    <table class="bench-table">
+      <tr><th>${t('b.method')}</th><th>${t('b.time')}</th><th>${t('b.ops')}</th><th>${t('b.bound')}</th><th>${t('b.share')}</th></tr>
+      ${rows.map((r) => `<tr><td>${methodName(r.algorithm)}</td>
+        <td><code>${(r.complexity || {}).time || ''}</code></td>
+        <td title="${(r.complexity || {}).work || ''}">${fmtInt(r.measured_ops ?? r.nodes_expanded)}</td>
+        <td>${r.theoretical_bound_ops ? fmtInt(r.theoretical_bound_ops) : '—'}</td>
+        <td>${r.theoretical_bound_ops && r.measured_ops ? fmt(100 * r.measured_ops / r.theoretical_bound_ops, 1) + ' %' : '—'}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:4px">${t('b.note', { v: fmtInt(data.navigable_cells) })}</div>
+    <table style="margin-top:8px">
+      <tr><td>${t('b.reduction')}</td><td>${data.astar_node_reduction ?? '—'}×</td></tr>
+      <tr><td>${t('b.speedup')}</td><td>${data.astar_time_ratio ?? '—'}×</td></tr>
+      <tr><td>${t('b.diffAD')}</td><td>${data.optimality_gap_pct ?? '—'} %</td></tr>
+      <tr><td>${t('b.gaGap')}</td><td>${data.genetic_gap_pct ?? '—'} %</td></tr>
+      <tr><td>${t('b.diffDP')}</td><td>${data.dynamic_gap_pct ?? '—'} %</td></tr>
+      <tr><td>${t('b.build')}</td><td>${fmt(data.cost_map_build_s, 3)} ${t('b.shared')}</td></tr>
+      <tr><td>${t('b.grid')}</td><td>${data.grid && data.grid.n_rows ? `${data.grid.n_rows}×${data.grid.n_cols} @ ${data.grid.resolution_deg}°` : '—'}</td></tr>
+      <tr><td>${t('b.whole')}</td><td>${fmt(data.total_seconds, 2)} ${t('u.s')}</td></tr>
+    </table>
+    <div class="muted" style="margin-top:6px">${t('b.runtimes')}</div>`;
+}
+
+els.showBenchRoutes.addEventListener('change', () => {
+  if (!els.showBenchRoutes.checked) State.layers.bench.clearLayers();
 });
 
 /**
@@ -758,9 +1106,14 @@ els.btnClear.addEventListener('click', () => {
   Object.values(State.layers).forEach((layer) => layer.clearLayers());
   State.start = State.end = State.plan = null;
   State.pickNext = 'start';
+  State.via = []; State.viaMode = false;
+  renderViaList(); updatePickHint();
   els.resultBlock.hidden = true;
-  els.compareBlock.textContent = 'Build a route first.';
-  els.cursorReadout.querySelector('.zone').textContent = 'move the pointer over the chart';
+  els.resultFile.hidden = true;
+  els.progressBlock.hidden = true;
+  State.lastFrame = null;
+  els.compareBlock.textContent = t('cmp.first');
+  els.cursorReadout.querySelector('.zone').textContent = t('cursor.hint');
 });
 
 /**
@@ -778,7 +1131,7 @@ els.resolution.addEventListener('input', () => {
 });
 /** Speed slider: mirror the value next to the label (knots). */
 els.speed.addEventListener('input', () => {
-  els.speedOut.textContent = parseFloat(els.speed.value).toFixed(1) + ' kn';
+  els.speedOut.textContent = parseFloat(els.speed.value).toFixed(1) + ' ' + t('unit.kn');
 });
 
 /**
@@ -798,6 +1151,7 @@ document.querySelectorAll('.chip[data-preset]').forEach((chip) => {
     els.endLat.value = c;   els.endLon.value = d;
     els.resolution.value = chip.dataset.resolution || '0.25';
     els.resolution.dispatchEvent(new Event('input'));     // refresh the label
+    State.via = [];                                       // a preset has no via points
     readEndpointsFromInputs();
     map.fitBounds(L.latLngBounds([[a, b], [c, d]]).pad(0.4));
   });
@@ -856,37 +1210,21 @@ els.fileInput.addEventListener('change', () => {
  * @returns {Promise<void>} Errors are shown in the report panel, not thrown.
  */
 async function handleUpload(file) {
-  els.dropzoneText.textContent = `uploading ${file.name}…`;
+  els.dropzoneText.textContent = t('up.uploading', { f: file.name });
   els.uploadReport.hidden = false;
-  els.uploadReport.textContent = 'classifying points with the neural network…';
+  els.uploadReport.textContent = t('up.classifying');
   try {
     const data = await Api.upload(file);
     State.uploadToken = data.token;
-    // `|| 1` avoids division by zero in the percentages of an empty histogram.
-    const total = Object.values(data.histogram).reduce((a, b) => a + b, 0) || 1;
-    // Report table; the label agreement row appears only if the file had labels.
-    // 报告表；仅当文件带标签时才显示一致率。
-    els.uploadReport.innerHTML = `
-      <table>
-        <tr><td>File</td><td>${data.report.source}</td></tr>
-        <tr><td>Features read</td><td>${fmtInt(data.report.n_features)}</td></tr>
-        <tr><td>Valid points</td><td>${fmtInt(data.report.n_valid)}</td></tr>
-        <tr><td>Dropped</td><td>${fmtInt(data.report.n_dropped)}</td></tr>
-        <tr><td>Classified</td><td>${fmtInt(data.classified)}</td></tr>
-        ${data.accuracy_vs_labels ? `<tr><td>Agreement with labels</td>
-          <td>${(data.accuracy_vs_labels.agreement * 100).toFixed(2)} %
-          (n=${fmtInt(data.accuracy_vs_labels.n_labelled)})</td></tr>` : ''}
-        ${Object.entries(data.histogram).map(([k, v]) =>
-          `<tr><td>${k}</td><td>${fmtInt(v)} (${(100 * v / total).toFixed(1)}%)</td></tr>`).join('')}
-      </table>`;
-    els.dropzoneText.textContent = `${file.name} — ${fmtInt(data.classified)} points classified`;
+    State.upload = { data, name: file.name };      // kept to redraw in another language
+    renderUploadReport();
 
     State.layers.points.clearLayers();
     data.points.forEach((p) => {
       L.circleMarker([p.latitude, p.longitude], {
         radius: 2.6, stroke: false,
         fillColor: ZONE_COLOURS[p.class_code], fillOpacity: 0.75,
-      }).bindTooltip(`${p.class_code} · ${(p.confidence * 100).toFixed(0)}%`)
+      }).bindTooltip(() => `${I18N.zone(p.class_code)} · ${(p.confidence * 100).toFixed(0)}%`)
         .addTo(State.layers.points);
     });
     if (data.points.length) {
@@ -897,9 +1235,36 @@ async function handleUpload(file) {
     els.pointsExport.hidden = false;
     loadDbStats();
   } catch (err) {
-    els.uploadReport.textContent = 'Upload failed: ' + err.message;
-    els.dropzoneText.textContent = 'Drop a file here or click to browse';
+    State.upload = null;
+    els.uploadReport.textContent = t('up.failed') + err.message;
+    els.dropzoneText.textContent = t('drop.text');
   }
+}
+
+/**
+ * Loading/validation report of the last upload (State.upload) and the class
+ * histogram; the label agreement row appears only if the file had labels.
+ * 上传报告表；仅当文件带标签时才显示一致率。
+ */
+function renderUploadReport() {
+  if (!State.upload) return;
+  const { data, name } = State.upload;
+  // `|| 1` avoids division by zero in the percentages of an empty histogram.
+  const total = Object.values(data.histogram).reduce((a, b) => a + b, 0) || 1;
+  els.uploadReport.innerHTML = `
+    <table>
+      <tr><td>${t('up.file')}</td><td>${data.report.source}</td></tr>
+      <tr><td>${t('up.features')}</td><td>${fmtInt(data.report.n_features)}</td></tr>
+      <tr><td>${t('up.valid')}</td><td>${fmtInt(data.report.n_valid)}</td></tr>
+      <tr><td>${t('up.dropped')}</td><td>${fmtInt(data.report.n_dropped)}</td></tr>
+      <tr><td>${t('up.classified')}</td><td>${fmtInt(data.classified)}</td></tr>
+      ${data.accuracy_vs_labels ? `<tr><td>${t('up.agreement')}</td>
+        <td>${(data.accuracy_vs_labels.agreement * 100).toFixed(2)} %
+        (n=${fmtInt(data.accuracy_vs_labels.n_labelled)})</td></tr>` : ''}
+      ${Object.entries(data.histogram).map(([k, v]) =>
+        `<tr><td>${I18N.zone(k)}</td><td>${fmtInt(v)} (${(100 * v / total).toFixed(1)}%)</td></tr>`).join('')}
+    </table>`;
+  els.dropzoneText.textContent = t('up.done', { f: name, n: fmtInt(data.classified) });
 }
 
 /* --------------------------------------------------------- model panel */
@@ -914,31 +1279,41 @@ async function handleUpload(file) {
  */
 async function loadModel() {
   try {
-    const data = await Api.model();
-    const s = data.summary, m = data.metrics || {};
-    setStatus(els.modelPill,
-      `model ${(s.accuracy * 100).toFixed(1)}% acc`, 'pill-ok');
-    els.modelBlock.innerHTML = `
-      <table>
-        <tr><td>Architecture</td><td>${s.architecture}</td></tr>
-        <tr><td>Input features</td><td>${s.n_features}</td></tr>
-        <tr><td>Parameters</td><td>${fmtInt(s.parameters)}</td></tr>
-        <tr><td>Reference samples</td><td>${fmtInt(s.reference_samples)}</td></tr>
-        <tr><td>Test accuracy</td><td>${fmt(m.accuracy * 100, 2)} %</td></tr>
-        <tr><td>Macro F1</td><td>${fmt(m.macro_f1, 4)}</td></tr>
-        <tr><td>Cohen κ</td><td>${fmt(m.cohen_kappa, 4)}</td></tr>
-        <tr><td>Macro ROC-AUC</td><td>${fmt(m.macro_roc_auc, 4)}</td></tr>
-        <tr><td>Trained</td><td>${s.trained_utc || '—'}</td></tr>
-      </table>
-      ${m.per_class ? '<h4>Per class F1</h4><table>' + Object.entries(m.per_class)
-        .map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v.f1, 4)}</td></tr>`).join('') + '</table>' : ''}`;
-    Charts.confusionMatrix(els.confusion, m.confusion_matrix,
-      ['OPEN_SEA', 'COASTAL_SEA', 'NEAR_COAST', 'COASTLINE']);
-    Charts.trainingCurves(els.historyChart, data.history);
+    State.model = { data: await Api.model() };
   } catch (err) {
-    setStatus(els.modelPill, 'model unavailable', 'pill-bad');
-    els.modelBlock.textContent = 'Model not available: ' + err.message;
+    State.model = { error: err.message };
   }
+  renderModel();
+}
+
+/** Fill the "Model" tab and the header pill from State.model (any language). */
+function renderModel() {
+  if (!State.model) return;
+  if (State.model.error !== undefined) {
+    setStatus(els.modelPill, t('model.unavailable'), 'pill-bad');
+    els.modelBlock.textContent = t('mo.unavailable') + State.model.error;
+    return;
+  }
+  const data = State.model.data;
+  const s = data.summary, m = data.metrics || {};
+  setStatus(els.modelPill, t('model.pill', { acc: (s.accuracy * 100).toFixed(1) }), 'pill-ok');
+  els.modelBlock.innerHTML = `
+    <table>
+      <tr><td>${t('mo.arch')}</td><td>${s.architecture}</td></tr>
+      <tr><td>${t('mo.features')}</td><td>${s.n_features}</td></tr>
+      <tr><td>${t('mo.params')}</td><td>${fmtInt(s.parameters)}</td></tr>
+      <tr><td>${t('mo.ref')}</td><td>${fmtInt(s.reference_samples)}</td></tr>
+      <tr><td>${t('mo.acc')}</td><td>${fmt(m.accuracy * 100, 2)} %</td></tr>
+      <tr><td>${t('mo.f1')}</td><td>${fmt(m.macro_f1, 4)}</td></tr>
+      <tr><td>${t('mo.kappa')}</td><td>${fmt(m.cohen_kappa, 4)}</td></tr>
+      <tr><td>${t('mo.auc')}</td><td>${fmt(m.macro_roc_auc, 4)}</td></tr>
+      <tr><td>${t('mo.trained')}</td><td>${s.trained_utc || '—'}</td></tr>
+    </table>
+    ${m.per_class ? `<h4>${t('mo.perClass')}</h4><table>` + Object.entries(m.per_class)
+      .map(([k, v]) => `<tr><td>${I18N.zone(k)}</td><td>${fmt(v.f1, 4)}</td></tr>`).join('') + '</table>' : ''}`;
+  Charts.confusionMatrix(els.confusion, m.confusion_matrix,
+    ['OPEN_SEA', 'COASTAL_SEA', 'NEAR_COAST', 'COASTLINE']);
+  Charts.trainingCurves(els.historyChart, data.history);
 }
 
 /**
@@ -950,13 +1325,13 @@ async function loadDbStats() {
   try {
     const s = await Api.statistics();
     els.dbStats.innerHTML = `<table>
-      <tr><td>Sessions</td><td>${fmtInt(s.sessions)}</td></tr>
-      <tr><td>Stored points</td><td>${fmtInt(s.points)}</td></tr>
-      <tr><td>Stored routes</td><td>${fmtInt(s.routes)}</td></tr>
-      <tr><td>Waypoints</td><td>${fmtInt(s.waypoints)}</td></tr>
-      <tr><td>Database size</td><td>${fmt(s.database_size_kb, 1)} kB</td></tr>
+      <tr><td>${t('db.sessions')}</td><td>${fmtInt(s.sessions)}</td></tr>
+      <tr><td>${t('db.points')}</td><td>${fmtInt(s.points)}</td></tr>
+      <tr><td>${t('db.routes')}</td><td>${fmtInt(s.routes)}</td></tr>
+      <tr><td>${t('db.waypoints')}</td><td>${fmtInt(s.waypoints)}</td></tr>
+      <tr><td>${t('db.size')}</td><td>${fmt(s.database_size_kb, 1)} kB</td></tr>
     </table>`;
-  } catch (err) { els.dbStats.textContent = 'unavailable'; }
+  } catch (err) { els.dbStats.textContent = t('unavailable'); }
 }
 
 /**
@@ -972,11 +1347,11 @@ async function loadHistory() {
     const data = await Api.routes(25);
     els.historyList.innerHTML = data.routes.map((r) => `
       <div class="history-item" data-uid="${r.route_uid}">
-        <div class="row1"><span>${r.algorithm.toUpperCase()}</span>
-          <span>${fmt(r.distance_km, 0)} km</span></div>
-        <div class="row2">${r.created_utc} · ${fmtInt(r.n_waypoints)} wp ·
-          ${fmt(r.runtime_s, 3)} s · detour ${fmt(r.detour_ratio, 3)}×</div>
-      </div>`).join('') || '<div class="muted">No routes stored yet.</div>';
+        <div class="row1"><span>${methodName(r.algorithm)}</span>
+          <span>${fmt(r.distance_km, 0)} ${t('u.km')}</span></div>
+        <div class="row2">${r.created_utc} · ${fmtInt(r.n_waypoints)} ${t('hist.wp')} ·
+          ${fmt(r.runtime_s, 3)} ${t('u.s')} · ${t('hist.detour')} ${fmt(r.detour_ratio, 3)}×</div>
+      </div>`).join('') || `<div class="muted">${t('hist.none')}</div>`;
     // Handlers are attached after every refresh because innerHTML replaced the items.
     // 每次刷新后重新绑定点击事件（innerHTML 已替换元素）。
     els.historyList.querySelectorAll('.history-item').forEach((item) => {
@@ -990,7 +1365,7 @@ async function loadHistory() {
         }
       });
     });
-  } catch (err) { els.historyList.textContent = 'unavailable'; }
+  } catch (err) { els.historyList.textContent = t('unavailable'); }
 }
 
 // Manual refresh button of the history list.
@@ -1000,18 +1375,204 @@ $('btn-refresh-history').addEventListener('click', loadHistory);
 // Map legend built from GET /api/zones: colour swatch, class code and the
 // traversal cost (or "impassable"), plus the great-circle line colour.
 // 由 /api/zones 生成地图图例。
-Api.zones().then((data) => {
-  els.mapLegend.innerHTML = data.classes.map((z) =>
-    `<div><i style="background:${z.colour}"></i>${z.code}
-      ${z.navigable ? `(cost ${z.cost})` : '(impassable)'}</div>`).join('') +
-    `<div style="margin-top:5px"><i style="background:#ef6461"></i>great circle</div>`;
-}).catch(() => { els.mapLegend.textContent = 'legend unavailable'; });
+Api.zones().then((data) => { State.zones = data; renderLegend(); })
+  .catch(() => { State.zones = null; els.mapLegend.textContent = t('legend.unavailable'); });
+
+/** Draw the map legend from State.zones in the current language. */
+function renderLegend() {
+  if (!State.zones) return;
+  els.mapLegend.innerHTML = State.zones.classes.map((z) =>
+    `<div><i style="background:${z.colour}"></i>${t('legend.item', { z: I18N.zone(z.code),
+      c: z.navigable ? t('legend.cost', { c: z.cost }) : t('legend.impassable') })}</div>`).join('') +
+    `<div style="margin-top:5px"><i style="background:#ef6461"></i>${t('legend.gc')}</div>`;
+}
+
+/* -------------------------------------------- parameter panels (1.3) */
+/**
+ * Key under which the changed parameter values are remembered in this
+ * browser (a convenience only: the page works without browser storage).
+ */
+const PARAMS_KEY = 'maritime-route.parameters.v1';
+
+/**
+ * Load the parameter description (GET /api/parameters) and build the panels.
+ * Values changed earlier in this browser are restored.
+ * 加载参数说明并生成参数面板；恢复此前在本浏览器中修改过的值。
+ */
+async function loadParameters() {
+  try {
+    State.paramSpec = await Api.parameters();
+    try {
+      const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) || '{}');
+      const known = new Set(State.paramSpec.groups.flatMap((g) => g.fields.map((f) => f.key)));
+      State.params = Object.fromEntries(Object.entries(saved).filter(([k]) => known.has(k)));
+    } catch (err) { State.params = {}; }
+    if (els.resultsDir) els.resultsDir.textContent = State.paramSpec.results_dir;
+    renderParameters();
+  } catch (err) {
+    els.paramsBody.textContent = t('params.unavailable') + err.message;
+  }
+}
+
+/** Remember the changed values in this browser (ignored if storage is blocked). */
+function saveParameters() {
+  try { localStorage.setItem(PARAMS_KEY, JSON.stringify(State.params)); } catch (err) { /* private mode */ }
+}
+
+/**
+ * Render the "Lattice and run" group and the group of the selected method.
+ * A field whose value differs from the default is highlighted; the summary
+ * line counts the changed values of the groups shown.
+ * 显示“网格与运行”分组以及当前算法的参数分组；修改过的参数高亮显示。
+ */
+function renderParameters() {
+  const spec = State.paramSpec;
+  if (!spec) return;
+  const algorithm = els.algorithm.value;
+  const groups = spec.groups.filter((g) => g.id === 'common' || g.id === algorithm);
+  const value = (f) => (f.key in State.params ? State.params[f.key] : f.default);
+  // Group titles, labels, help and units in the interface language (I18N.param);
+  // the server's English texts are the fallback. 参数名称与说明随界面语言变化。
+  const groupTitle = (g) => { const k = 'g.' + g.id; return t(k) === k ? g.title : t(k); };
+  els.paramsBody.innerHTML = groups.map((g) => `
+    <div class="params-group"><h4>${groupTitle(g)}</h4>
+      ${g.fields.map((f) => {
+        const changed = f.key in State.params;
+        const tr = I18N.param(f);
+        const def = f.type === 'bool' ? t(f.default ? 'params.on' : 'params.off') : fmtParam(f.default);
+        const help = escapeAttr(`${tr.help} (${t('params.default')} ${def})`);
+        if (f.type === 'bool') {
+          return `<div class="param param-bool ${changed ? 'changed' : ''}">
+            <label for="p-${f.key}" title="${help}">${tr.label}</label>
+            <input type="checkbox" id="p-${f.key}" data-key="${f.key}" ${value(f) ? 'checked' : ''}></div>`;
+        }
+        return `<div class="param ${changed ? 'changed' : ''}">
+          <label for="p-${f.key}" title="${help}">${tr.label}${tr.unit ? `<span class="unit">${tr.unit}</span>` : ''}</label>
+          <input type="number" id="p-${f.key}" data-key="${f.key}" value="${value(f)}"
+                 min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step ?? 'any'}"></div>`;
+      }).join('')}
+    </div>`).join('') +
+    (algorithm === 'great_circle' ? `<div class="muted">${t('params.noneGC')}</div>` : '');
+  els.paramsBody.querySelectorAll('input[data-key]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const field = spec.groups.flatMap((g) => g.fields).find((f) => f.key === input.dataset.key);
+      let v = field.type === 'bool' ? input.checked : Number(input.value);
+      if (field.type !== 'bool') {
+        if (Number.isNaN(v)) v = field.default;
+        if (field.min !== null && v < field.min) v = field.min;      // clamp like the server
+        if (field.max !== null && v > field.max) v = field.max;
+        if (field.type === 'int') v = Math.round(v);
+        input.value = v;
+      }
+      if (v === field.default) delete State.params[field.key]; else State.params[field.key] = v;
+      saveParameters();
+      renderParameters();
+    });
+  });
+  const shown = groups.flatMap((g) => g.fields).filter((f) => f.key in State.params).length;
+  els.paramsChanged.textContent = shown ? t('params.changed', { n: shown }) : t('params.defaults');
+}
+
+/** Escape a text for an HTML attribute value (the help texts contain quotes). */
+const escapeAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/** Number formatting of a default value in the tooltip. */
+const fmtParam = (v) => (Number.isInteger(v) ? fmtInt(v) : String(v));
+
+els.algorithm.addEventListener('change', renderParameters);
+els.btnParamsReset.addEventListener('click', () => {
+  // Reset only the groups shown (common + the selected method).
+  const algorithm = els.algorithm.value;
+  State.paramSpec.groups.filter((g) => g.id === 'common' || g.id === algorithm)
+    .forEach((g) => g.fields.forEach((f) => delete State.params[f.key]));
+  saveParameters();
+  renderParameters();
+});
+
+/* ------------------------------------------------ result files (1.3) */
+/**
+ * List of the most recent result files on the Data tab (GET /api/results).
+ * Each item shows the file name and its absolute path and downloads the file.
+ * 数据页的结果文件列表。
+ * @returns {Promise<void>}
+ */
+async function loadResults() {
+  try {
+    const data = await Api.results(15);
+    els.resultsDir.textContent = data.directory;
+    els.resultsList.innerHTML = data.files.map((f) => `
+      <a class="history-item" href="/api/results/${encodeURIComponent(f.name)}" download="${f.name}"
+         style="text-decoration:none">
+        <div class="row1"><span style="word-break:break-all">${f.name}</span><span>${fmt(f.size_kb, 1)} kB</span></div>
+        <div class="row2">${f.modified_utc}</div>
+      </a>`).join('') || `<div class="muted">${t('results.none')}</div>`;
+  } catch (err) { els.resultsList.textContent = t('unavailable'); }
+}
+$('btn-refresh-results').addEventListener('click', loadResults);
+
+/* ------------------------------------------- interface language (1.3) */
+/**
+ * Language switch in the top bar (EN / RU / 中文). I18N.setLang translates the
+ * marked static texts of index.html; this listener redraws everything that
+ * app.js generated: hints, pills, parameter panels, the last route and its
+ * summary, the comparison table, the model, database, history and result
+ * lists, the legend and the layer names.
+ * 顶栏语言切换：静态文字由 I18N.apply 翻译，动态生成的内容在此重新绘制。
+ */
+document.querySelectorAll('.lang-switch button').forEach((b) =>
+  b.addEventListener('click', () => I18N.setLang(b.dataset.lang)));
+
+I18N.onChange(() => {
+  buildLayerControl();
+  updatePickHint();
+  redrawEndpoints();
+  els.speed.dispatchEvent(new Event('input'));
+  const ws = { open: ['ws.open', 'pill-ok'], closed: ['ws.closed', 'pill-wait'],
+               error: ['ws.error', 'pill-bad'] }[State.wsState] || ['ws.connecting', 'pill-wait'];
+  setStatus(els.wsStatus, t(ws[0]), ws[1]);
+  if (!State.job) els.btnStop.textContent = t('btn.stop');
+  showTimerLimit();
+  renderParameters();
+  renderModel();
+  renderLegend();
+  renderUploadReport();
+  if (State.plan) renderPlan(State.plan, true);
+  else els.compareBlock.textContent = t('cmp.first');
+  if (State.bench) renderBenchmark(State.bench);
+  else if (!State.job) els.benchmarkBlock.textContent = t('bench.run');
+  if (!State.job && State.lastDone === 'plan' && State.lastFrame) showFinalProgress(State.lastFrame.plan);
+  if (!State.job && State.lastDone === 'bench' && State.bench) {
+    els.progressStage.textContent = t(State.bench.status === 'cancelled' ? 'bench.stopped' : 'bench.finished');
+  }
+  if (!els.cursorReadout.querySelector('.zone i')) {
+    els.cursorReadout.querySelector('.zone').textContent = t('cursor.hint');
+  }
+  loadDbStats();
+  loadHistory();
+  loadResults();
+});
 
 /* ---------------------------------------------------------- bootstrap */
-// Initial load: draw markers for the default coordinates in the form and
-// fetch the model panel, database statistics and route history in parallel.
-// 页面启动：绘制默认起终点并加载模型、统计与历史数据。
+// Initial load: translate the page, draw markers for the default coordinates
+// in the form and fetch the model panel, database statistics and route
+// history in parallel.
+// 页面启动：翻译页面，绘制默认起终点并加载模型、统计与历史数据。
+I18N.apply();
+setStatus(els.wsStatus, t('ws.connecting'), 'pill-wait');
+if (!State.model) setStatus(els.modelPill, t('model.none'), 'pill-muted');
+els.modelBlock.textContent = t('model.loading');
+els.paramsBody.textContent = t('params.loading');
+els.compareBlock.textContent = t('cmp.first');
+els.benchmarkBlock.textContent = t('bench.run');
+els.progressStage.textContent = t('progress.working');
+els.cursorReadout.querySelector('.zone').textContent = t('cursor.hint');
+buildLayerControl();
+updatePickHint();
+els.speed.dispatchEvent(new Event('input'));
 readEndpointsFromInputs();
+setBusy(null);
 loadModel();
 loadDbStats();
 loadHistory();
+loadParameters();
+loadResults();

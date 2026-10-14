@@ -63,6 +63,8 @@ const Api = (() => {
   //   plan       POST /api/route             blocking route planning
   //   benchmark  POST /api/benchmark         compare all algorithms
   //   classify   POST /api/classify          classify [[lat, lon], ...]
+  //   parameters GET  /api/parameters         user-settable search parameters (1.3)
+  //   results    GET  /api/results?limit=N    JSON result files (1.3)
   //   upload     POST /api/upload            multipart AIS file upload
   // 每个方法对应一个后端接口。
   return {
@@ -75,6 +77,8 @@ const Api = (() => {
     plan:        (body)      => request('/api/route',     { method: 'POST', body: JSON.stringify(body) }),
     benchmark:   (body)      => request('/api/benchmark', { method: 'POST', body: JSON.stringify(body) }),
     classify:    (points)    => request('/api/classify',  { method: 'POST', body: JSON.stringify({ points }) }),
+    parameters:  ()          => request('/api/parameters'),
+    results:     (limit = 30)=> request(`/api/results?limit=${limit}`),
 
     /**
      * Upload an AIS file for classification (POST /api/upload).

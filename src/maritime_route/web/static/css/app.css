@@ -50,7 +50,7 @@
 html, body {
   margin: 0; height: 100%;
   background: var(--bg); color: var(--text);
-  font: 14px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  font: 14px/1.45 "Segoe UI", "Helvetica Neue", Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
 }
 
 /* ------------------------------------------------------------- top bar */
@@ -73,6 +73,15 @@ html, body {
    are set by setStatus() in app.js: ok = green, wait = amber, bad = red.
    状态标签：ok 绿色、wait 黄色、bad 红色。 */
 .status-cluster { display: flex; gap: 8px; align-items: center; }
+/* Interface language switch (version 1.3): EN / RU / 中文. 界面语言切换按钮。 */
+.lang-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.lang-switch button {
+  background: var(--bg-2); color: var(--muted); border: 0; padding: 3px 9px;
+  font-family: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.4; cursor: pointer;
+}
+.lang-switch button + button { border-left: 1px solid var(--line); }
+.lang-switch button:hover { color: var(--text); }
+.lang-switch button.active { background: var(--accent); color: #06202f; }
 .pill {
   font-size: 11px; padding: 4px 10px; border-radius: 20px;
   border: 1px solid var(--line); background: var(--bg-2); color: var(--muted);
@@ -322,6 +331,70 @@ output { color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* Narrow screens (tablets, phones): stack the panel above the map instead of
    side by side. 窄屏时面板与地图上下排列。 */
+/* ------------------------------------------------ version 1.3 additions
+   Own-route hint, pick buttons, via-point list, parameter panels, timer and
+   Stop button, result-file box, attempts table, benchmark legend.
+   1.3 版新增：自定义航线、途经点、参数面板、计时器与停止按钮、结果文件。 */
+.own-route { line-height: 1.5; }
+.mk { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+      border-radius: 50%; font: 700 9px sans-serif; color: #06202f; vertical-align: -3px; }
+.mk-a { background: #7fe3b0; } .mk-b { background: #ffb4b2; } .mk-v { background: #ffd166; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.btn.active { border-color: var(--warn); color: var(--warn); }
+.via-block { background: var(--bg-3); border: 1px solid var(--line); border-radius: 7px;
+             padding: 7px 9px; margin-bottom: 10px; font-size: 12px; }
+.via-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
+.via-list { margin: 6px 0 0; padding-left: 20px; }
+.via-list li { margin: 2px 0; font-variant-numeric: tabular-nums; }
+.via-list button { margin-left: 6px; background: none; border: none; color: var(--danger);
+                   cursor: pointer; font-size: 13px; padding: 0 3px; }
+.params { background: var(--bg-3); border: 1px solid var(--line); border-radius: 7px;
+          margin: 4px 0 10px; }
+.params > summary { cursor: pointer; padding: 8px 10px; font-size: 12.5px; color: var(--text); }
+.params-changed { color: var(--warn); font-size: 11px; margin-left: 6px; }
+.params-body { padding: 0 10px 4px; }
+.params-group { border-top: 1px solid var(--line); padding: 7px 0 2px; }
+.params-group h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+                   color: var(--accent); }
+.param { display: grid; grid-template-columns: 1fr 112px; gap: 6px; align-items: center; margin-bottom: 5px; }
+.param label { font-size: 11.5px; color: var(--muted); cursor: help; }
+.param input[type=number] { padding: 4px 6px; font-size: 12px; }
+.param.changed label { color: var(--warn); }
+.param .unit { font-size: 10px; color: var(--muted); margin-left: 3px; }
+.param-bool { grid-template-columns: 1fr auto; }
+.params-foot { padding: 4px 10px 9px; }
+.timer-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.timer { font: 600 15px/1 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--text); }
+.timer-limit { font-size: 11px; color: var(--muted); flex: 1; }
+.btn-stop { background: #4a1c1f; border-color: var(--danger); color: #ffb9b7; font-weight: 600; }
+.btn-stop:hover { background: #64252a; }
+.result-file { background: #10261e; border: 1px solid #2f6b52; border-radius: 7px; padding: 8px 10px;
+               margin: 8px 0 10px; font-size: 12px; }
+.rf-head { color: #93e8c1; font-weight: 600; margin-bottom: 4px; }
+.rf-path { display: block; word-break: break-all; font-size: 11px; color: var(--text);
+           background: #0b1a14; padding: 5px 6px; border-radius: 4px; user-select: all; }
+.rf-actions { display: flex; gap: 6px; margin-top: 6px; }
+.attempts { margin-top: 10px; }
+.attempts > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.attempts table td { font-size: 11px; }
+.bench-swatch { display: inline-block; width: 18px; height: 4px; border-radius: 2px; margin-right: 5px;
+                vertical-align: middle; }
+.bench-table td { font-size: 11px; text-align: right; padding: 3px 3px; }
+.bench-table td:first-child { text-align: left; }
+.bench-table th { font-size: 10px; color: var(--muted); font-weight: 500; text-align: right; padding: 2px 3px; }
+.bench-table th:first-child { text-align: left; }
+.status-tag { font-size: 10px; padding: 1px 5px; border-radius: 8px; border: 1px solid var(--line);
+              white-space: nowrap; }
+/* Russian and Chinese texts are longer: tables keep numbers on one line and
+   scroll sideways in the narrow panel instead of being cut. 俄文/中文表格不折行，必要时横向滚动。 */
+.report { overflow-x: auto; }
+.report td:last-child { white-space: nowrap; }
+.bench-table td { white-space: nowrap; }
+.status-found { color: #8ff0c0; border-color: #2f6b52; }
+.status-step_limit, .status-time_limit { color: var(--warn); border-color: #6b5a2f; }
+.status-cancelled, .status-no_path { color: #ffb4b2; border-color: #6b2f2f; }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: 45vh 55vh; height: auto; }
   .panel { border-right: none; border-bottom: 1px solid var(--line); }

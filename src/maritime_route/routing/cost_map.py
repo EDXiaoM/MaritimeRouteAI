@@ -51,7 +51,7 @@ import math
 import logging
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -64,6 +64,8 @@ from ..config import (
     ZONE_COST,
     RoutingConfig,
 )
+
+from .geodesy import haversine_km
 
 LOGGER = logging.getLogger(__name__)
 
@@ -248,6 +250,16 @@ class CostMap:
     confidence: np.ndarray    # (rows, cols) float32
     cost: np.ndarray          # (rows, cols) float32, IMPASSABLE_COST on land
     build_seconds: float = 0.0
+    #: Cells the classifier took for water but the land mask shows as mostly
+    #: land, made impassable when the land mask is used in the cost map (1.3).
+    #: 分类器判为水域、但陆地掩膜显示大部分为陆地而被设为不可通行的格子数。
+    mask_land_cells: int = 0
+    #: Cells actually classified (fewer than all in a corridor map). 实际分类的格子数。
+    classified_cells: int = -1
+    #: Cells of the corridor (two-level search), ``None`` for a full lattice.
+    region: Optional[np.ndarray] = None
+    #: Zones as predicted by the classifier, before the land-mask fusion.
+    raw_class_index: Optional[np.ndarray] = None
 
     @property
     def passable(self) -> np.ndarray:
@@ -303,6 +315,9 @@ class CostMap:
             "zone_shares": {k: round(v / max(total, 1), 4) for k, v in counts.items()},
             "mean_confidence": round(float(self.confidence.mean()), 4),
             "build_seconds": round(self.build_seconds, 3),
+            "mask_land_cells": int(self.mask_land_cells),
+            "cells_classified": int(self.classified_cells if self.classified_cells >= 0
+                                    else self.spec.n_cells),
         }
 
     def to_overlay(self, max_cells: int = 20000) -> Dict:
@@ -420,6 +435,10 @@ def build_cost_map(
     config: RoutingConfig = ROUTING,
     progress: ProgressCallback = None,
     batch_size: int = 16384,
+    control=None,
+    land_mask_share: float = 0.0,
+    region: Optional[np.ndarray] = None,
+    mask_exempt: Sequence[Tuple[float, float]] = (),
 ) -> CostMap:
     """Classify every lattice cell and convert the zones into traversal costs.
 
@@ -451,6 +470,23 @@ def build_cost_map(
         ``("cost_map", 1.0, statistics)`` at the end.
     batch_size : int, default 16384
         Number of nodes classified per call.
+    control : RunControl, optional
+        Checked before every batch (Stop button, time limit).
+    land_mask_share : float, default 0.0
+        When > 0 and the land mask is installed, a cell that the classifier
+        takes for water is made impassable if at least this share of its
+        3 x 3 sub-samples lies on land according to the independent 1 km land
+        mask (:func:`mask_land_share`). 0 = classifier only (version 1.2).
+    region : numpy.ndarray of bool, optional
+        Cells to classify (the corridor of the two-level search,
+        :func:`corridor_mask`); the other cells are not classified and are
+        marked as land. ``None`` classifies the whole lattice.
+    mask_exempt : sequence of (lat, lon)
+        Points (the ports) around which the land mask does not override the
+        classifier, within :data:`MASK_EXEMPT_KM` or one and a half cells: a
+        port in a fjord or a river mouth narrower than a cell would otherwise
+        be cut off from the sea (the coastline check ignores the port
+        approach in the same way).
 
     Returns
     -------
@@ -462,45 +498,213 @@ def build_cost_map(
     # Row-major flattening: flat index = row * n_cols + col; reshaped back below.
     flat_lat = grid_lat.ravel()
     flat_lon = grid_lon.ravel()
-    n = flat_lat.size
+    n_all = flat_lat.size
+    # Indices of the cells to classify: all, or only the corridor.
+    # 需要分类的格子：全部，或仅走廊内的格子。
+    todo = np.arange(n_all) if region is None else np.flatnonzero(np.asarray(region).ravel())
+    n = todo.size
 
-    class_flat = np.zeros(n, dtype=np.int8)
-    conf_flat = np.zeros(n, dtype=np.float32)
+    # Cells outside the region stay land (COASTLINE) with confidence 0.
+    class_flat = np.full(n_all, 0 if region is None else CLASS_NAMES.index("COASTLINE"),
+                         dtype=np.int8)
+    conf_flat = np.zeros(n_all, dtype=np.float32)
 
     # At least ~20 batches, so that the web client receives regular progress
     # frames even for a small lattice; never fewer than 1024 cells per batch.
     # 至少分成约 20 批，使小网格也能向前端连续推送进度；每批不少于 1024 个格子。
-    batch_size = min(batch_size, max(1024, math.ceil(n / 20)))
+    batch_size = min(batch_size, max(1024, math.ceil(max(n, 1) / 20)))
+    if control is not None:
+        # Smaller batches when the run can be stopped: the Stop button and the
+        # time limit are checked between batches, so a batch of 1 024 cells
+        # (about 0.1 s) bounds the reaction time.
+        batch_size = min(batch_size, CONTROL_BATCH)
     for start in range(0, n, batch_size):
+        if control is not None:
+            control.check()
         stop = min(start + batch_size, n)
-        probs = classifier.predict_coordinates(flat_lat[start:stop], flat_lon[start:stop])
+        idx = todo[start:stop]
+        probs = classifier.predict_coordinates(flat_lat[idx], flat_lon[idx])
         # Predicted class = most probable zone; confidence = its probability.
-        class_flat[start:stop] = probs.argmax(axis=1).astype(np.int8)
-        conf_flat[start:stop] = probs.max(axis=1).astype(np.float32)
+        class_flat[idx] = probs.argmax(axis=1).astype(np.int8)
+        conf_flat[idx] = probs.max(axis=1).astype(np.float32)
         if progress is not None:
             progress("classify", stop / n, {"cells_done": int(stop), "cells_total": int(n)})
 
     class_index = class_flat.reshape(spec.n_rows, spec.n_cols)
     confidence = conf_flat.reshape(spec.n_rows, spec.n_cols)
 
-    # Start with every cell impassable, then write the finite zone weights.
-    # 先全部设为不可通行，再为有限权重的类别写入代价。
-    cost = np.full(class_index.shape, IMPASSABLE_COST, dtype=np.float32)
-    for i, name in enumerate(CLASS_NAMES):
-        weight = ZONE_COST[name]
-        if np.isfinite(weight):
-            cost[class_index == i] = float(weight)
-
-    # Land mask = every class that is not navigable (NEAR_COAST, COASTLINE).
-    land = ~np.isin(class_index, [CLASS_NAMES.index(c) for c in NAVIGABLE_CLASSES])
-    cost = _apply_safety_margin(cost, land, config)
-
-    cost_map = CostMap(spec=spec, class_index=class_index, confidence=confidence,
-                       cost=cost, build_seconds=time.perf_counter() - t0)
+    cost_map = _assemble(spec, class_index, confidence, config, region,
+                         land_mask_share, mask_exempt, time.perf_counter() - t0, int(n))
     if progress is not None:
         progress("cost_map", 1.0, cost_map.statistics())
     LOGGER.info("Cost map built: %s", cost_map.statistics()["zone_shares"])
     return cost_map
+
+
+def _assemble(spec: GridSpec, class_index: np.ndarray, confidence: np.ndarray,
+              config: RoutingConfig, region: Optional[np.ndarray], land_mask_share: float,
+              mask_exempt: Sequence[Tuple[float, float]], seconds: float,
+              classified: int) -> CostMap:
+    """Zones -> costs (with the optional land-mask fusion and the near-shore band)."""
+    # Optional fusion with the land mask (version 1.3): water cells that are
+    # mostly land on the 1 km mask become land, so that the search cannot cut
+    # across a peninsula or an island the classifier missed.
+    # 可选：与陆地掩膜融合——掩膜显示大部分为陆地的"水域"格子改为陆地。
+    mask_cells = 0
+    zones = class_index
+    if land_mask_share > 0:
+        share = mask_land_share(spec)
+        if share is not None:
+            navigable_idx = [CLASS_NAMES.index(c) for c in NAVIGABLE_CLASSES]
+            override = np.isin(class_index, navigable_idx) & (share >= land_mask_share)
+            if len(mask_exempt):
+                grid_lat, grid_lon = spec.mesh()
+                radius = max(MASK_EXEMPT_KM, 1.5 * spec.resolution_deg * 111.2)
+                for lat0, lon0 in mask_exempt:
+                    override &= haversine_km(grid_lat, grid_lon, lat0, lon0) > radius
+            mask_cells = int(override.sum())
+            if mask_cells:
+                zones = class_index.copy()
+                zones[override] = CLASS_NAMES.index("COASTLINE")
+
+    # Start with every cell impassable, then write the finite zone weights.
+    # 先全部设为不可通行，再为有限权重的类别写入代价。
+    cost = np.full(zones.shape, IMPASSABLE_COST, dtype=np.float32)
+    for i, name in enumerate(CLASS_NAMES):
+        weight = ZONE_COST[name]
+        if np.isfinite(weight):
+            cost[zones == i] = float(weight)
+
+    # Land mask = every class that is not navigable (NEAR_COAST, COASTLINE).
+    land = ~np.isin(zones, [CLASS_NAMES.index(c) for c in NAVIGABLE_CLASSES])
+    if region is not None:
+        # The edge of a corridor is not a coast: no near-shore penalty there.
+        land &= np.asarray(region, dtype=bool)
+    cost = _apply_safety_margin(cost, land, config)
+
+    return CostMap(spec=spec, class_index=zones, confidence=confidence, cost=cost,
+                   build_seconds=seconds, mask_land_cells=mask_cells,
+                   classified_cells=classified, region=region,
+                   raw_class_index=class_index)
+
+
+def fuse_land_mask(cost_map: CostMap, config: RoutingConfig, land_mask_share: float,
+                   mask_exempt: Sequence[Tuple[float, float]] = ()) -> CostMap:
+    """The same cost map with the land mask fused in - without classifying again.
+
+    在已有代价地图上融合陆地掩膜（无需重新分类）。
+
+    Used by the planner when the route found on the classifier-only map
+    crosses land on the coastline check (version 1.3): the zones of the
+    classifier are kept, only the cells that the 1 km land mask shows as
+    mostly land are made impassable (:func:`mask_land_share`). Costs a few
+    milliseconds, because the network is not asked again.
+
+    Returns
+    -------
+    CostMap
+        A new map; ``mask_land_cells`` tells how many cells were overridden.
+    """
+    t0 = time.perf_counter()
+    raw = cost_map.raw_class_index if cost_map.raw_class_index is not None else cost_map.class_index
+    fused = _assemble(cost_map.spec, raw, cost_map.confidence, config, cost_map.region,
+                      land_mask_share, mask_exempt, cost_map.build_seconds,
+                      cost_map.classified_cells)
+    LOGGER.info("Land mask fused into the cost map: %d cells blocked (%.3f s)",
+                fused.mask_land_cells, time.perf_counter() - t0)
+    return fused
+
+
+def corridor_mask(spec: GridSpec, route: Sequence[Tuple[float, float]],
+                  width_km: float) -> np.ndarray:
+    """Cells within ``width_km`` of a route - the corridor of the two-level search.
+
+    两级搜索的走廊：与粗网格航线距离不超过 width_km 的格子。
+
+    The route is densified to steps of half a cell, every sample marks its
+    cell, and the Euclidean distance transform
+    (:func:`scipy.ndimage.distance_transform_edt`, with the cell size in km
+    along each axis at the mean latitude) gives the distance of every cell
+    from the route. Cost: O(V).
+
+    Parameters
+    ----------
+    spec : GridSpec
+        The fine lattice.
+    route : sequence of (lat, lon)
+        Route found on the coarse lattice.
+    width_km : float
+        Half-width of the corridor, km.
+
+    Returns
+    -------
+    numpy.ndarray of bool
+        ``(n_rows, n_cols)``, True inside the corridor.
+    """
+    from scipy import ndimage
+
+    pts = np.asarray(route, dtype=float)
+    on_route = np.zeros((spec.n_rows, spec.n_cols), dtype=bool)
+    step = spec.resolution_deg / 2.0
+    for (a_lat, a_lon), (b_lat, b_lon) in zip(pts[:-1], pts[1:]):
+        k = max(1, int(math.ceil(max(abs(b_lat - a_lat), abs(b_lon - a_lon)) / step)))
+        for t in np.linspace(0.0, 1.0, k + 1):
+            on_route[spec.coord_to_cell(a_lat + t * (b_lat - a_lat), a_lon + t * (b_lon - a_lon))] = True
+    if len(pts) == 1:
+        on_route[spec.coord_to_cell(*pts[0])] = True
+    mean_lat = math.radians(float(pts[:, 0].mean()))
+    dy = spec.resolution_deg * 111.2
+    dx = max(spec.resolution_deg * 111.2 * math.cos(mean_lat), 1e-3)
+    distance = ndimage.distance_transform_edt(~on_route, sampling=(dy, dx))
+    return distance <= width_km
+
+
+#: Largest classification batch when a run control is given (reaction time of Stop).
+CONTROL_BATCH: int = 1024
+
+#: Radius around the ports in which the land mask does not override the
+#: classifier, km (see ``mask_exempt`` of :func:`build_cost_map`).
+MASK_EXEMPT_KM: float = 10.0
+
+#: Sub-samples per cell side used by :func:`mask_land_share`.
+MASK_SUBSAMPLES: int = 3
+
+
+def mask_land_share(spec: GridSpec, sub: int = MASK_SUBSAMPLES) -> Optional[np.ndarray]:
+    """Share of each cell that lies on land according to the 1 km land mask.
+
+    每个格子中陆地所占比例（按 1 km 陆地掩膜在格内 sub x sub 个点上取样）。
+
+    Every cell is sampled at ``sub x sub`` points evenly spread inside it
+    (3 x 3 = 9 points by default) and each point is looked up in the
+    GLOBE-based mask of :mod:`.coast_check`. The cost is one vectorised
+    look-up per sub-sample position, a few milliseconds for 10^5 cells.
+
+    Parameters
+    ----------
+    spec : GridSpec
+        Lattice.
+    sub : int
+        Sub-samples per cell side.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        Array ``(n_rows, n_cols)`` of shares in [0, 1]; ``None`` if the
+        package ``global-land-mask`` is not installed.
+    """
+    from . import coast_check            # local import: coast_check imports this module
+
+    if not coast_check.is_available():
+        return None
+    lat, lon = spec.mesh()
+    offsets = (np.arange(sub) + 0.5) / sub - 0.5
+    share = np.zeros(lat.shape, dtype=np.float32)
+    for dy in offsets:
+        for dx in offsets:
+            share += coast_check.is_land(lat + dy * spec.resolution_deg,
+                                         lon + dx * spec.resolution_deg)
+    return share / float(sub * sub)
 
 
 def _apply_safety_margin(cost: np.ndarray, land: np.ndarray, config: RoutingConfig) -> np.ndarray:
@@ -550,8 +754,9 @@ def _apply_safety_margin(cost: np.ndarray, land: np.ndarray, config: RoutingConf
         shifted[:, 1:] = np.maximum(shifted[:, 1:], padded[:, :-1])    # from the west neighbour
         shifted[:, :-1] = np.maximum(shifted[:, :-1], padded[:, 1:])   # from the east neighbour
         padded = np.maximum(padded, shifted)
-    # Water cells inside the dilated band (land itself is excluded).
-    near_land = (padded > 0) & (~land)
+    # Water cells inside the dilated band (land itself, and any cell that is
+    # impassable for another reason such as lying outside a corridor, is excluded).
+    near_land = (padded > 0) & (~land) & (cost < IMPASSABLE_COST)
     result = cost.copy()
     result[near_land] = np.minimum(
         result[near_land] * float(config.proximity_penalty), IMPASSABLE_COST - 1.0

@@ -28,11 +28,20 @@ coast_check
     Independent coastline check of a route against the 1 km GLOBE land mask
     (package ``global-land-mask``) and the choice of the lattice cells to
     block when a route crosses land (imported by the planner).
+control
+    :class:`~maritime_route.routing.control.RunControl` - Stop button and
+    time limit of a running search (version 1.3).
+parameters
+    :class:`~maritime_route.routing.parameters.SearchParameters` - the
+    parameters of the lattice and of every method, set in the interface
+    (step limits, heuristic weight, genetic-algorithm settings...; version 1.3).
 planner
     :class:`RoutePlanner` - the service used by the web application: builds
     the lattice, snaps the ports onto water, runs the chosen algorithm,
     refines the lattice on failure, corrects a route that crosses land on the
-    coastline check and compares the result with the great circle. :func:`benchmark` runs all methods on one shared cost map.
+    coastline check and compares the result with the great circle;
+    :meth:`RoutePlanner.plan_via` plans a route through intermediate points.
+    :func:`benchmark` runs all methods on one shared cost map.
 
 The names below are the public API of the package.
 以下名称为本包对外公开的接口。

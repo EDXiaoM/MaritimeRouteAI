@@ -111,6 +111,9 @@ def route_to_geojson(plan, include_points: bool = True,
                 "coast_check": (getattr(plan, "coast_check", {}) or {}).get("verdict"),
                 "coast_max_land_run_km": (getattr(plan, "coast_check", {}) or {}).get("max_land_run_km"),
                 "warning": getattr(plan, "warning", ""),
+                "status": getattr(plan, "status", "found"),
+                "via": [[lat, lon] for lat, lon in getattr(plan, "via", [])],
+                "parameters": getattr(plan, "parameters", {}),
                 "stroke": "#0b6efd", "stroke-width": 4, "stroke-opacity": 0.9,
             },
             "geometry": {
@@ -415,6 +418,10 @@ def route_to_pdf(plan, path: Path | str, map_png: Optional[bytes] = None,
                         spaceAfter=5, textColor=colors.HexColor("#0b3c68"))
     body = ParagraphStyle("Body", parent=styles["BodyText"], fontSize=9.5, leading=13)
     small = ParagraphStyle("Small", parent=body, fontSize=8, textColor=colors.HexColor("#555555"))
+    # Table cell text that may need to wrap (long paths, parameter lists).
+    cell = ParagraphStyle("Cell", parent=body, fontSize=8.5, leading=10.5)
+    # A file path has no spaces: allow a line break at any character.
+    path_cell = ParagraphStyle("PathCell", parent=cell, wordWrap="CJK")
 
     document = SimpleDocTemplate(
         str(path), pagesize=A4,
@@ -488,7 +495,12 @@ def route_to_pdf(plan, path: Path | str, map_png: Optional[bytes] = None,
         ["Grid", f"{plan.grid.get('n_rows')} x {plan.grid.get('n_cols')} cells at "
                  f"{plan.grid.get('resolution_deg')}°"],
         ["Feasible", "Yes" if plan.feasible else "No"],
-        ["Coastline check", _coast_text(getattr(plan, "coast_check", {}) or {})],
+        ["Outcome of the search", _status_text(plan)],
+        ["Coastline check", Paragraph(_coast_text(getattr(plan, "coast_check", {}) or {}), cell)],
+        ["Intermediate points", Paragraph("; ".join(
+            f"{a:.4f}, {b:.4f}" for a, b in getattr(plan, "via", [])) or "none", cell)],
+        ["Parameters changed", Paragraph(_changed_parameters(plan), cell)],
+        ["Result file (JSON)", Paragraph(getattr(plan, "result_file", "") or "-", path_cell)],
     ], [58 * mm, 110 * mm]))
     if getattr(plan, "warning", ""):
         # The route still crosses land on the independent coastline.
@@ -626,6 +638,22 @@ def export_all(plan, results: Optional[Sequence] = None,
         paths["points_csv"] = str(write_csv(
             points_to_csv_string(results), directory / f"{stem}_points.csv"))
     return paths
+
+
+def _status_text(plan) -> str:
+    """Outcome of the search for the PDF report (version 1.3)."""
+    from ..routing.control import STATUS_TEXT
+    status = getattr(plan, "status", "found" if plan.feasible else "no_path")
+    return STATUS_TEXT.get(status, status)
+
+
+def _changed_parameters(plan) -> str:
+    """Parameters that differ from the defaults, ``key = value; ...``."""
+    from ..routing.parameters import SearchParameters
+    default = SearchParameters().to_dict()
+    used = getattr(plan, "parameters", {}) or {}
+    changed = [f"{k} = {v}" for k, v in used.items() if k in default and default[k] != v]
+    return "; ".join(changed) or "defaults"
 
 
 def _coast_text(check: Dict) -> str:

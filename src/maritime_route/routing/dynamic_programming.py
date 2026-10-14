@@ -55,6 +55,7 @@ import numpy as np
 
 from ..config import IMPASSABLE_COST
 from .astar import OFFSETS_8, Cell, ProgressCallback, SearchResult, _cell_distance_table, _path_km
+from .control import STATUS_STEP_LIMIT, RunControl
 from .cost_map import CostMap
 
 
@@ -129,6 +130,7 @@ def value_iteration(
     goal: Cell,
     progress: ProgressCallback = None,
     max_sweeps: Optional[int] = None,
+    control: Optional[RunControl] = None,
 ) -> Tuple[np.ndarray, int, Dict[Cell, np.ndarray]]:
     """Solve the Bellman equation for the cost-to-go of every cell.
 
@@ -142,8 +144,14 @@ def value_iteration(
         Receives ``("dynamic", fraction, {"sweep": k, "updated": m})`` after
         every tenth sweep; ``m`` is the number of cells whose value changed.
     max_sweeps : int, optional
-        Safety limit; by default the number of cells, which is never reached
-        because a shortest path cannot have more moves than there are cells.
+        Maximum number of sweeps (set in the interface). By default the
+        number of cells, which is never reached because a shortest path cannot
+        have more moves than there are cells. After ``k`` sweeps ``V`` holds
+        the cheapest cost over routes of at most ``k`` moves, so a limit
+        smaller than the number of moves of the optimal route gives either no
+        route or a valid but possibly longer one.
+    control : RunControl, optional
+        Checked once per sweep (Stop button, time limit).
 
     Returns
     -------
@@ -161,6 +169,8 @@ def value_iteration(
     limit = max_sweeps or n_rows * n_cols
     sweeps = 0
     while sweeps < limit:
+        if control is not None:
+            control.check()
         sweeps += 1
         # Right-hand side of the Bellman equation for all cells at once:
         # min over the eight moves of (cost of the step + value of the target).
@@ -235,6 +245,8 @@ def dynamic_programming(
     start: Cell,
     goal: Cell,
     progress: ProgressCallback = None,
+    max_sweeps: int = 0,
+    control: Optional[RunControl] = None,
 ) -> SearchResult:
     """Optimal route by dynamic programming (value iteration + greedy policy).
 
@@ -247,6 +259,10 @@ def dynamic_programming(
     progress : callable, optional
         Receives progress frames during value iteration, see
         :func:`value_iteration`.
+    max_sweeps : int, default 0
+        Maximum number of sweeps; 0 = until convergence.
+    control : RunControl, optional
+        Stop button and time limit, checked once per sweep.
 
     Returns
     -------
@@ -267,19 +283,34 @@ def dynamic_programming(
                             runtime_s=time.perf_counter() - t0,
                             message="Start or goal cell is not navigable")
 
-    value, sweeps, costs = value_iteration(cost_map, goal, progress=progress)
+    value, sweeps, costs = value_iteration(cost_map, goal, progress=progress,
+                                           max_sweeps=max_sweeps or None, control=control)
+    # Converged = the last sweep changed nothing; with a sweep limit it may not have.
+    limited = bool(max_sweeps) and sweeps >= max_sweeps
     cells = greedy_policy(value, costs, start, goal)
     updates = sweeps * int(passable.sum())
     if not cells:
+        if limited:
+            return SearchResult(found=False, algorithm="dynamic", nodes_expanded=updates,
+                                nodes_generated=sweeps, runtime_s=time.perf_counter() - t0,
+                                value=value, status=STATUS_STEP_LIMIT,
+                                message=f"Sweep limit of {max_sweeps:,} reached before the value "
+                                        f"reached the start - increase the maximum number of sweeps")
         return SearchResult(found=False, algorithm="dynamic", nodes_expanded=updates,
                             nodes_generated=sweeps, runtime_s=time.perf_counter() - t0,
                             value=value,
                             message="No navigable path exists between the given points")
     coords = [spec.cell_to_coord(r, c) for r, c in cells]
+    # With a sweep limit V holds the cost over routes of at most `sweeps` moves:
+    # the greedy walk still reaches the goal (V strictly decreases along it),
+    # but the route is optimal only if the iteration had converged.
+    message = (f"Sweep limit of {max_sweeps:,} reached: route over at most {sweeps} moves, "
+               f"may be longer than the optimum" if limited and len(cells) - 1 >= sweeps
+               else f"Bellman equation solved in {sweeps} sweeps")
     return SearchResult(
         found=True, path_cells=cells, path_coords=coords,
         total_cost=float(value[start]), distance_km=_path_km(coords),
         nodes_expanded=updates, nodes_generated=sweeps,
         runtime_s=time.perf_counter() - t0, algorithm="dynamic", value=value,
-        message=f"Bellman equation solved in {sweeps} sweeps",
+        message=message,
     )

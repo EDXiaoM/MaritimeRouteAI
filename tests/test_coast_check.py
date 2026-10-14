@@ -23,6 +23,7 @@ pytest.importorskip("global_land_mask")
 from maritime_route.config import CLASS_NAMES, IMPASSABLE_COST  # noqa: E402
 from maritime_route.routing import coast_check  # noqa: E402
 from maritime_route.routing.cost_map import CostMap, GridSpec  # noqa: E402
+from maritime_route.routing.parameters import SearchParameters  # noqa: E402
 from maritime_route.routing.planner import RoutePlanner  # noqa: E402
 
 OPEN, LAND = CLASS_NAMES.index("OPEN_SEA"), CLASS_NAMES.index("COASTLINE")
@@ -102,9 +103,14 @@ def test_blocking_copies_the_map():
 
 
 # ---------------------------------------------------------- the safeguard
+#: The safeguard is tested on its own: without the land mask in the cost map
+#: (version 1.3), which would already keep the route off the missed island.
+NO_MASK = SearchParameters.from_dict({"use_land_mask": False})
+
+
 def test_route_missed_island_is_corrected_automatically():
     planner = RoutePlanner(IslandBlindClassifier())
-    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1)
+    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, params=NO_MASK)
     assert plan.feasible
     check = plan.coast_check
     assert check["initial_verdict"] == "crossing"   # the first route ran over Bornholm
@@ -118,7 +124,7 @@ def test_route_missed_island_is_corrected_automatically():
 
 def test_correct_route_is_left_unchanged():
     planner = RoutePlanner(TruthClassifier())
-    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1)
+    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, params=NO_MASK)
     assert plan.coast_check["initial_verdict"] != "crossing"
     assert plan.coast_check["corrections"] == 0
     assert "coastline check passed" in plan.message
@@ -127,7 +133,7 @@ def test_correct_route_is_left_unchanged():
 @pytest.mark.parametrize("algorithm", ["dijkstra", "dynamic"])
 def test_safeguard_works_for_the_other_exact_methods(algorithm):
     planner = RoutePlanner(IslandBlindClassifier())
-    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), algorithm, 0.1)
+    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), algorithm, 0.1, params=NO_MASK)
     assert plan.feasible and plan.coast_check["verdict"] != "crossing"
 
 
@@ -136,7 +142,7 @@ def test_uncorrectable_route_carries_a_warning():
         MAX_COAST_CORRECTIONS = 0
 
     plan, _ = NoCorrection(BlindClassifier()).plan((56.2, 7.5), (56.2, 11.0), "astar", 0.25,
-                                                  auto_refine=False)
+                                                  auto_refine=False, params=NO_MASK)
     assert plan.feasible
     assert plan.coast_check["verdict"] == "crossing"
     assert "crosses land" in plan.warning
@@ -145,9 +151,10 @@ def test_uncorrectable_route_carries_a_warning():
 
 def test_benchmark_map_is_checked_but_not_changed():
     planner = RoutePlanner(IslandBlindClassifier())
-    _, cost_map = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, coast_guard=False)
+    _, cost_map = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, coast_guard=False,
+                                params=NO_MASK)
     plan, used = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1,
-                              reuse_cost_map=cost_map, auto_refine=False)
+                              reuse_cost_map=cost_map, auto_refine=False, params=NO_MASK)
     assert plan.coast_check["verdict"] == "crossing"
     assert plan.coast_check["corrections"] == 0
     assert used is cost_map
@@ -155,14 +162,15 @@ def test_benchmark_map_is_checked_but_not_changed():
 
 def test_switching_the_guard_off_keeps_the_old_behaviour():
     planner = RoutePlanner(IslandBlindClassifier())
-    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, coast_guard=False)
+    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, coast_guard=False,
+                                params=NO_MASK)
     assert plan.coast_check["verdict"] == "crossing" and plan.coast_check["corrections"] == 0
 
 
 # ------------------------------------------------------------ persistence
 def test_check_is_stored_with_the_route(repository):
     planner = RoutePlanner(IslandBlindClassifier())
-    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1)
+    plan, _ = planner.plan((55.12, 13.9), (55.12, 16.0), "astar", 0.1, params=NO_MASK)
     repository.save_route(plan)
     stored = repository.get_route(plan.route_id)
     assert stored["coast_check"]["initial_verdict"] == "crossing"
@@ -190,7 +198,7 @@ def test_old_database_gets_the_new_column(tmp_path):
     repo = RouteRepository(path)        # the constructor runs the migrations
     with sqlite3.connect(path) as conn:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(route)")]
-    assert columns[-1] == "coast_check_json"
+    assert columns[-4:] == ["coast_check_json", "status", "parameters_json", "result_file"]
     assert repo.get_route("old0000000000001")["coast_check"] == {}
 
 

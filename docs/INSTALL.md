@@ -128,7 +128,8 @@ All tunable values live in `src/maritime_route/config.py`. The most useful ones:
 | `ROUTING.max_grid_cells` | 400 000 | lattice budget; larger areas are coarsened |
 | `ROUTING.safety_margin_cells` | 1 | width of the penalised belt along the shore |
 | `ROUTING.proximity_penalty` | 1.6 | extra cost of a water cell next to land |
-| `GENETIC.*` | see file | population size, generations, rates and seed of the genetic algorithm |
+| `GENETIC.*` | see file | default population size, generations, rates and seed of the genetic algorithm |
+| `routing/parameters.py` | see file | since version 1.3 every parameter of the lattice and of the four methods is set **in the interface** (panel *Algorithm parameters*); this file defines their defaults, ranges and help texts |
 | `LABEL_CHECK_TOLERANCE_M` | 5.0 | tolerance of the data-cleaning check, metres |
 | `REGIONS` | eleven boxes | the sea regions used for per-region evaluation |
 | `TRAINING.*` | see file | network size, epochs, learning rate, seed |
@@ -143,6 +144,7 @@ export MR_PORT=8080
 export MR_DB_PATH=/var/lib/maritime/routes.db
 export MR_MODEL_DIR=/opt/maritime/models
 export MR_OUTPUT_DIR=/var/lib/maritime/exports
+export MR_RESULTS_DIR=/var/lib/maritime/results   # JSON result files (default outputs/results)
 ```
 
 ## 6. The database
@@ -172,5 +174,8 @@ selected manually in the layer control at the top-left corner of the map.
 | The genetic algorithm reports *no navigable route evolved* | the evolutionary search converged on a closed strait; use A\* |
 | A red banner *The route crosses land …* | the automatic coastline check could not correct the route (the neural network takes too much land for water there); set the grid resolution to 0.1° and build again, or check the passage on an official chart |
 | No coastline-check banner appears | the package `global-land-mask` is not installed — `pip install -r requirements.txt` |
+| *Step limit reached before the goal* | the maximum number of steps of the method is too small for this course; raise it in *Algorithm parameters* (for example ×100) or use A\* instead of Dijkstra |
+| The search takes too long | press **■ Stop**, or set a *Time limit*; use a coarser lattice, via points, or the heuristic weight of A\* above 1 |
+| Where are the result files? | `outputs/results` of the project (or `MR_RESULTS_DIR`); the path is shown after every search and on the *Data* tab |
 | The map is blank | no internet access — switch to *On-board chart (offline)* in the layer control |
 | `ModuleNotFoundError: maritime_route` | run the scripts from the project root, or set `PYTHONPATH=src` |

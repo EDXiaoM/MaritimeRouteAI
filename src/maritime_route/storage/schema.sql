@@ -142,7 +142,13 @@ CREATE TABLE IF NOT EXISTS route (
     -- Independent coastline check of the route (JSON: verdict, longest land
     -- stretch, automatic corrections). Added in version 1.2 as the last column,
     -- so that older databases are upgraded with ALTER TABLE ... ADD COLUMN.
-    coast_check_json  TEXT
+    coast_check_json  TEXT,
+    -- Version 1.3: outcome of the search ('found', 'no_path', 'step_limit',
+    -- 'cancelled', 'time_limit'), the parameters set in the interface (JSON)
+    -- and the absolute path of the JSON result file. Appended in this order.
+    status            TEXT,
+    parameters_json   TEXT,
+    result_file       TEXT
 );
 -- Indexes for per-method statistics (GROUP BY algorithm) and for listing
 -- routes newest first (ORDER BY created_utc).
@@ -196,9 +202,13 @@ CREATE TABLE IF NOT EXISTS model_run (
 -- One row per route with its waypoint count. LEFT JOIN keeps routes without
 -- waypoints (infeasible plans) with n_waypoints = 0, and GROUP BY r.id
 -- collapses the joined waypoint rows back to one row per route.
-CREATE VIEW IF NOT EXISTS v_route_summary AS
+-- Re-created on every start so that an older database gets the new columns.
+DROP VIEW IF EXISTS v_route_summary;
+CREATE VIEW v_route_summary AS
 SELECT r.route_uid,
        r.algorithm,
+       COALESCE(r.status, CASE WHEN r.feasible = 1 THEN 'found' ELSE 'no_path' END) AS status,
+       r.result_file,
        r.distance_km,
        r.great_circle_km,
        r.detour_ratio,

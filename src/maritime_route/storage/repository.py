@@ -135,7 +135,7 @@ class RouteRepository:
             conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
             # The column must exist before the table rebuild below copies rows
             # with SELECT * (same column order as schema.sql).
-            self._migrate_coast_column(conn)
+            self._migrate_columns(conn)
             self._migrate_algorithm_check(conn)
             for name in CLASS_NAMES:
                 cost = ZONE_COST[name]
@@ -157,13 +157,15 @@ class RouteRepository:
                 )
 
     @staticmethod
-    def _migrate_coast_column(conn) -> None:
-        """Add ``route.coast_check_json`` to a database created before version 1.2.
+    def _migrate_columns(conn) -> None:
+        """Add the columns of versions 1.2 and 1.3 to an older database.
 
-        The column is the last one of the table in ``schema.sql``, so
-        ``ALTER TABLE ... ADD COLUMN`` (which appends) gives exactly the
-        current column order. Old routes keep NULL there (not checked).
-        为旧数据库添加海岸线检查结果列。
+        ``coast_check_json`` (1.2), ``status``, ``parameters_json`` and
+        ``result_file`` (1.3) are the last columns of the table in
+        ``schema.sql``, in this order, so ``ALTER TABLE ... ADD COLUMN``
+        (which appends) gives exactly the current column order. Old routes
+        keep NULL there.
+        为旧数据库依次添加 1.2 与 1.3 版新增的列。
 
         Parameters
         ----------
@@ -171,9 +173,12 @@ class RouteRepository:
             Open connection inside the initialisation transaction.
         """
         columns = [row[1] for row in conn.execute("PRAGMA table_info(route)")]
-        if columns and "coast_check_json" not in columns:
-            conn.execute("ALTER TABLE route ADD COLUMN coast_check_json TEXT")
-            LOGGER.info("Database upgraded: route.coast_check_json added")
+        if not columns:
+            return
+        for name in ("coast_check_json", "status", "parameters_json", "result_file"):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE route ADD COLUMN {name} TEXT")
+                LOGGER.info("Database upgraded: route.%s added", name)
 
     @staticmethod
     def _migrate_algorithm_check(conn) -> None:
@@ -390,8 +395,8 @@ class RouteRepository:
                                      detour_ratio, estimated_hours, speed_knots, nodes_expanded,
                                      runtime_s, grid_resolution, grid_cells, feasible,
                                      baseline_json, zone_profile_json, created_utc,
-                                     coast_check_json)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     coast_check_json, status, parameters_json, result_file)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     plan.route_id, session_id, plan.algorithm,
                     plan.start[0], plan.start[1], plan.end[0], plan.end[1],
@@ -403,6 +408,9 @@ class RouteRepository:
                     json.dumps(plan.baseline), json.dumps(plan.zone_profile),
                     plan.created_utc,
                     json.dumps(getattr(plan, "coast_check", {}) or {}),
+                    getattr(plan, "status", None) or ("found" if plan.feasible else "no_path"),
+                    json.dumps(getattr(plan, "parameters", {}) or {}),
+                    getattr(plan, "result_file", "") or None,
                 ),
             )
             route_id = int(cur.lastrowid)
@@ -466,6 +474,7 @@ class RouteRepository:
             route["baseline"] = json.loads(route.pop("baseline_json") or "{}")
             route["zone_profile"] = json.loads(route.pop("zone_profile_json") or "{}")
             route["coast_check"] = json.loads(route.pop("coast_check_json", None) or "{}")
+            route["parameters"] = json.loads(route.pop("parameters_json", None) or "{}")
             route["waypoints"] = [
                 dict(w) for w in conn.execute(
                     "SELECT seq, latitude, longitude, class_code, zone_cost, cumulative_km, "

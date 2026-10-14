@@ -57,6 +57,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from ..config import EARTH_RADIUS_KM, IMPASSABLE_COST, ROUTING, RoutingConfig
+from .control import STATUS_STEP_LIMIT, RunControl
 from .cost_map import CostMap
 from .geodesy import haversine_km
 
@@ -127,6 +128,13 @@ class SearchResult:
     #: Value function V (dynamic programming only), shape (n_rows, n_cols).
     #: 价值函数（仅动态规划）。
     value: Optional[np.ndarray] = None
+    #: Outcome: ``"found"``, ``"no_path"`` or ``"step_limit"`` (see :mod:`.control`).
+    #: 结果状态。
+    status: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            self.status = "found" if self.found else "no_path"
 
     def to_dict(self) -> Dict:
         """JSON-serialisable summary without the path itself.
@@ -149,6 +157,7 @@ class SearchResult:
             "runtime_s": round(self.runtime_s, 4),
             "n_waypoints": len(self.path_coords),
             "message": self.message,
+            "status": self.status,
         }
 
 
@@ -222,6 +231,9 @@ def astar(
     config: RoutingConfig = ROUTING,
     progress: ProgressCallback = None,
     progress_every: int = 20000,
+    max_steps: int = 0,
+    control: Optional[RunControl] = None,
+    check_every: int = 2000,
 ) -> SearchResult:
     """A* shortest-cost path between two lattice cells.
 
@@ -255,13 +267,26 @@ def astar(
         ``("astar", fraction, {"expanded", "frontier"})``.
     progress_every : int, default 20000
         Expansion interval between progress reports.
+    max_steps : int, default 0
+        Maximum number of expansions (one step = one cell taken from the
+        queue); 0 means no limit. When the limit is reached before the goal
+        the search returns ``found=False`` with ``status="step_limit"`` -
+        on a complex course the user raises the limit in the interface
+        (for example from 1,000 to 100,000) and searches again.
+    control : RunControl, optional
+        Checked every ``check_every`` expansions; raises
+        :class:`~maritime_route.routing.control.SearchStopped` when the user
+        pressed *Stop* or the time limit passed.
+    check_every : int, default 2000
+        Expansion interval between control checks.
 
     Returns
     -------
     SearchResult
         ``found=True`` with the optimal path, cost and counters, or
-        ``found=False`` with a message when start/goal is on land or the goal
-        is unreachable.
+        ``found=False`` with a message when start/goal is on land, the goal
+        is unreachable (``status="no_path"``) or the step limit was reached
+        (``status="step_limit"``).
     """
     t0 = time.perf_counter()
     spec = cost_map.spec
@@ -356,8 +381,22 @@ def astar(
                 distance_km=_path_km(coords),
                 nodes_expanded=expanded, nodes_generated=generated,
                 runtime_s=time.perf_counter() - t0, algorithm="astar",
-                message="Optimal path found",
+                message="Optimal path found" if h_weight <= 1.0 else
+                        f"Path found (weighted A*, at most {h_weight:g} x the optimum)",
             )
+
+        if max_steps and expanded >= max_steps:
+            # Step limit reached: report how far the search got.
+            # 达到最大步数：返回未完成状态。
+            return SearchResult(
+                found=False, algorithm="astar", nodes_expanded=expanded,
+                nodes_generated=generated, runtime_s=time.perf_counter() - t0,
+                status=STATUS_STEP_LIMIT,
+                message=f"Step limit of {max_steps:,} reached before the goal "
+                        f"({len(heap):,} cells still in the queue) - increase the maximum number of steps",
+            )
+        if control is not None and expanded % check_every == 0:
+            control.check()
 
         if progress is not None and expanded % progress_every == 0:
             # Progress estimate: share of the initial heuristic distance

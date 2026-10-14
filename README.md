@@ -152,6 +152,47 @@ default 0.25° a diagonal step of the lattice cuts across Attica, which is
 narrower than one cell. Some Aegean islands (Kea, Naxos, Skiathos) have no land
 sample in the corpus and are therefore classified as sea.
 
+## Version 1.3 — remarks of the supervisor
+
+* **Parameters in the application, not in the code.** Panel *Algorithm parameters*:
+  maximum number of steps (A\*, Dijkstra), heuristic weight (weighted A\*), maximum
+  sweeps (dynamic programming), population, generations, early stop, tournament,
+  crossover, mutation, elite, waypoints, land weight and seed (genetic algorithm),
+  plus the lattice (cell budget, margin, corrections) and a **time limit**
+  (`src/maritime_route/routing/parameters.py`).
+* **Timer and Stop.** The progress block shows the elapsed time; **■ Stop** ends any
+  search (classification, search, correction) within 0.22 s
+  (`routing/control.py`). Outcomes: found, no path, step limit, time limit, stopped.
+* **Every result is saved to a JSON file** (found or not) in `outputs/results`, named
+  with the coordinates, the method, the outcome and the search time, e.g.
+  `route_N54.3233E10.1228_N59.4370E24.7536_dijkstra_step_limit_5.44s_20261014-134803.json`;
+  the file holds the request, all parameters, the timing and **all points**; its
+  absolute path is shown on the screen (`export/results.py`).
+* **Own route and via points.** Click A and B anywhere, drag them, type them; **Shift +
+  click** adds intermediate points; the route is planned leg by leg.
+* **Complex courses:** adaptive search area (widen when the passage lies outside the
+  box), fusion of the 1 km land mask into the cost map, two-level search (fine
+  lattice only in a corridor around the coarse route).
+* **Comparison of the methods on one course** with progress and Stop, routes of all
+  methods on the chart, and the **theoretical complexity** next to the measured work.
+* **Interface in English, Russian and Chinese**: buttons **EN / RU / 中文** in the header;
+  the choice is remembered in the browser, the results on the screen are redrawn in the new
+  language (`web/static/js/i18n.js`). Result files and reports stay in English.
+* Experiment `scripts/complex_routes.py` → `docs/figures/complex_routes.json`;
+  Dijkstra: 1,000 steps → step limit, 10,000 → route (6,728 steps needed); A* needs 5,351.
+
+| Complex course | Version 1.2 | Version 1.3 |
+|---|---|---|
+| Gdańsk → Bergen | grazing, 5.7 s | grazing, 1.5 s |
+| Helsinki → Copenhagen | grazing, 0.7 s | correct, 0.6 s |
+| Rotterdam → Gdańsk | correct, 3.9 s | grazing, 3.9 s |
+| Piraeus → Rhodes | grazing, 1.0 s | grazing, 1.1 s |
+| Jeddah → Dubai | no route, 126.4 s | correct, 5.5 s |
+| Singapore → Hong Kong | correct, 0.7 s | correct, 0.6 s |
+| Kapellskär → Oulu | crosses land 10 km, 11.1 s | crosses land 5 km, 20.3 s |
+
+The 100 random voyages of the test, planned again with version 1.3: 79 correct, 11 grazing, 2 crossing land, 8 without a route.
+
 ## 3. Requirements
 
 | Item | Minimum | Recommended |
@@ -243,12 +284,14 @@ MaritimeRouteAI/
 │   │   ├── genetic.py             genetic-algorithm search (fitness function)
 │   │   ├── dynamic_programming.py value iteration on the Bellman equation (value function)
 │   │   ├── coast_check.py         independent coastline check of every route
+│   │   ├── control.py             Stop button and time limit of a running search
+│   │   ├── parameters.py          parameters of the search methods set in the interface
 │   │   └── planner.py             orchestration, refinement, coastline correction, benchmark
 │   ├── storage/                   SQLite schema and repository
-│   ├── export/                    GeoJSON / CSV / PDF writers
+│   ├── export/                    GeoJSON / CSV / PDF writers, JSON result files
 │   └── web/                       FastAPI service, WebSocket, tiles, browser client
 ├── scripts/                       command-line tools (section 6) and run_server.py
-├── tests/                         101 automated tests (pytest)
+├── tests/                         139 automated tests (pytest)
 ├── models/                        trained weights, scaler, reference index, metadata
 ├── data/samples/                  sample AIS track
 └── docs/
@@ -270,7 +313,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-All 101 tests must pass. Tests that need the trained model are skipped when
+All 139 tests must pass. Tests that need the trained model are skipped when
 `models/zone_classifier.pt` is missing.
 
 ## 9. Limitations

@@ -27,12 +27,13 @@ from __future__ import annotations
 
 import heapq
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 from ..config import IMPASSABLE_COST, ROUTING, RoutingConfig
 from .astar import OFFSETS_4, OFFSETS_8, Cell, ProgressCallback, SearchResult, _cell_distance_table, _path_km, _reconstruct
+from .control import STATUS_STEP_LIMIT, RunControl
 from .cost_map import CostMap
 
 
@@ -43,6 +44,9 @@ def dijkstra(
     config: RoutingConfig = ROUTING,
     progress: ProgressCallback = None,
     progress_every: int = 20000,
+    max_steps: int = 0,
+    control: Optional[RunControl] = None,
+    check_every: int = 2000,
 ) -> SearchResult:
     """Uniform-cost search - guarantees the optimum without a heuristic.
 
@@ -67,12 +71,24 @@ def dijkstra(
         ``("dijkstra", fraction, {"expanded", "frontier"})``.
     progress_every : int, default 20000
         Expansion interval between progress reports.
+    max_steps : int, default 0
+        Maximum number of expansions; 0 means no limit. Dijkstra expands
+        every cell closer to the start than the goal, so a long or winding
+        course needs far more steps than A*: a voyage across the Baltic on
+        a 0.25 degree lattice takes about 10^4 steps, the same voyage on a
+        0.05 degree lattice about 10^5-10^6. When the limit is reached the
+        result has ``status="step_limit"``.
+    control : RunControl, optional
+        Checked every ``check_every`` expansions (Stop button, time limit).
+    check_every : int, default 2000
+        Expansion interval between control checks.
 
     Returns
     -------
     SearchResult
         ``found=True`` with the optimal path, or ``found=False`` with a
-        message when start/goal is on land or no path exists.
+        message when start/goal is on land, no path exists or the step limit
+        was reached.
     """
     t0 = time.perf_counter()
     spec = cost_map.spec
@@ -116,6 +132,17 @@ def dijkstra(
                 runtime_s=time.perf_counter() - t0, algorithm="dijkstra",
                 message="Optimal path found",
             )
+
+        if max_steps and expanded >= max_steps:
+            return SearchResult(
+                found=False, algorithm="dijkstra", nodes_expanded=expanded,
+                nodes_generated=generated, runtime_s=time.perf_counter() - t0,
+                status=STATUS_STEP_LIMIT,
+                message=f"Step limit of {max_steps:,} reached before the goal "
+                        f"(search radius {d_current:,.0f} weighted km) - increase the maximum number of steps",
+            )
+        if control is not None and expanded % check_every == 0:
+            control.check()
 
         if progress is not None and expanded % progress_every == 0:
             progress("dijkstra", min(expanded / budget, 0.995),

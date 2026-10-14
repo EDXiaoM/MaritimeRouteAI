@@ -89,6 +89,7 @@ import numpy as np
 
 from ..config import GENETIC, IMPASSABLE_COST, GeneticConfig
 from .astar import OFFSETS_8, Cell, ProgressCallback, SearchResult, _cell_distance_table, _path_km
+from .control import STATUS_STEP_LIMIT, RunControl
 from .cost_map import CostMap, nearest_navigable
 
 #: A chromosome: ordered list of intermediate waypoints (lattice cells), not
@@ -336,6 +337,7 @@ def genetic(
     config: GeneticConfig = GENETIC,
     progress: ProgressCallback = None,
     seed: Optional[int] = None,
+    control: Optional[RunControl] = None,
 ) -> SearchResult:
     """Search a low-cost navigable route with a genetic algorithm.
 
@@ -352,6 +354,9 @@ def genetic(
         client to show the generation counter in real time.
     seed:
         Random seed; ``None`` takes ``config.random_seed``.
+    control:
+        Optional :class:`~maritime_route.routing.control.RunControl`, checked
+        once per generation (Stop button, time limit).
 
     Returns
     -------
@@ -633,6 +638,8 @@ def genetic(
     generation = 0
 
     for generation in range(1, config.generations + 1):
+        if control is not None:
+            control.check()
         # Elitism: the `elite` best individuals pass unchanged (as copies).
         # 精英保留：最优的若干个体原样进入下一代。
         order = sorted(range(len(population)), key=lambda i: fitness[i])
@@ -664,7 +671,8 @@ def genetic(
                      {"generation": generation, "best_cost": round(best_fit, 1)})
         # Early stop after `stagnation_limit` generations without improvement.
         # 连续若干代无改进则提前终止。
-        if stagnant >= config.stagnation_limit:
+        # A limit of 0 disables the early stop (all generations are run).
+        if config.stagnation_limit and stagnant >= config.stagnation_limit:
             break
 
     # ---- result ---------------------------------------------------------- #
@@ -673,7 +681,11 @@ def genetic(
     _, land = evaluator.fitness(start, goal, best)
     coords = [spec.cell_to_coord(r, c) for r, c in cells]
     found = land == 0
+    # Not found after all generations: the generation limit plays the role of
+    # the step limit of A* and Dijkstra (more generations may still succeed).
+    status = "found" if found else (STATUS_STEP_LIMIT if generation >= config.generations else "no_path")
     return SearchResult(
+        status=status,
         found=found,
         path_cells=cells,
         path_coords=coords,

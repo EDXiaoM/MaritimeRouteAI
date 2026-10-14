@@ -113,12 +113,14 @@ const Charts = (() => {
     ctx.fillText((aMax * 100).toFixed(0) + '%', pad.l + iw + 4, pad.t + 7);
     ctx.fillText((aMin * 100).toFixed(0) + '%', pad.l + iw + 4, pad.t + ih);
     ctx.textAlign = 'center';
-    ctx.fillText('epoch 1', pad.l + 16, H - 6);
-    ctx.fillText('epoch ' + n, pad.l + iw - 16, H - 6);
+    // Texts in the interface language (js/i18n.js). 文字随界面语言变化。
+    ctx.fillText(t('chart.epoch') + ' 1', pad.l + 16, H - 6);
+    ctx.fillText(t('chart.epoch') + ' ' + n, pad.l + iw - 16, H - 6);
     ctx.fillStyle = '#4da3ff'; ctx.textAlign = 'left';
-    ctx.fillText('— loss', pad.l + 4, pad.t + 9);
+    const lossText = t('chart.loss');
+    ctx.fillText(lossText, pad.l + 4, pad.t + 9);
     ctx.fillStyle = '#2a9d8f';
-    ctx.fillText('— accuracy', pad.l + 48, pad.t + 9);
+    ctx.fillText(t('chart.acc'), pad.l + 12 + ctx.measureText(lossText).width, pad.t + 9);
   }
 
   /**
@@ -135,14 +137,16 @@ const Charts = (() => {
    * @param {HTMLElement} container - Element that receives the grid.
    * @param {number[][]} matrix - Square count matrix from the model metrics.
    * @param {string[]} labels - Class codes in matrix order; shortened for
-   *   display ('OPEN_SEA' -> 'OPEN SEA', 'NEAR_COAST' -> 'NEAR CST').
+   *   display in English ('OPEN_SEA' -> 'OPEN SEA', 'NEAR_COAST' -> 'NEAR CST'),
+   *   the zone names in Russian and Chinese.
    */
   function confusionMatrix(container, matrix, labels) {
     if (!container || !matrix) return;
-    const short = labels.map((l) => l.replace('_SEA', ' SEA').replace('_COAST', ' CST'));
+    const short = labels.map((l) => (I18N.lang === 'en'
+      ? l.replace('_SEA', ' SEA').replace('_COAST', ' CST') : I18N.zone(l)));
     const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));
     // Header row: corner cell + one column header per predicted class.
-    let html = '<div class="cm-row"><div class="cm-cell cm-head">true \\ pred</div>' +
+    let html = '<div class="cm-row"><div class="cm-cell cm-head">' + t('chart.truePred') + '</div>' +
       short.map((s) => `<div class="cm-cell cm-head">${s}</div>`).join('') + '</div>';
 
     matrix.forEach((row, i) => {
@@ -181,14 +185,14 @@ const Charts = (() => {
     container.innerHTML = Object.entries(profile)
       .map(([code, n]) => n
         ? `<div style="width:${(100 * n / total).toFixed(2)}%;background:${colours[code]}"
-             title="${code}: ${n} (${(100 * n / total).toFixed(1)}%)"></div>`
+             title="${I18N.zone(code)}: ${n} (${(100 * n / total).toFixed(1)}%)"></div>`
         : '')
       .join('');
     if (legend) {
       legend.innerHTML = Object.entries(profile)
         .filter(([, n]) => n > 0)
         .map(([code, n]) =>
-          `<span><i style="background:${colours[code]}"></i>${code} ${(100 * n / total).toFixed(1)}%</span>`)
+          `<span><i style="background:${colours[code]}"></i>${I18N.zone(code)} ${(100 * n / total).toFixed(1)}%</span>`)
         .join('');
     }
   }
