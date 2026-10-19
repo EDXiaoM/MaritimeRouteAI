@@ -19,7 +19,7 @@
 <title>Maritime Route Planner</title>
 <!-- Stylesheets: Leaflet first, then the application sheet, which overrides some Leaflet rules. -->
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v=__APP_VERSION__">
 </head>
 <body>
 <!-- Top bar: application name and two status pills. 顶栏：标题与状态标签。 -->
@@ -40,6 +40,7 @@
   <div class="status-cluster">
     <!-- Interface language (version 1.3): English, Russian, Chinese; the
          choice is remembered in this browser (js/i18n.js). 界面语言切换：英/俄/中。 -->
+    <span class="lang-label" data-i18n="lang.label">Language</span>
     <div class="lang-switch" role="group" data-i18n-title="lang.title" title="Interface language">
       <button type="button" data-lang="en">EN</button>
       <button type="button" data-lang="ru">RU</button>
@@ -47,6 +48,8 @@
     </div>
     <span id="ws-status" class="pill pill-wait">connecting…</span>
     <span id="model-pill" class="pill pill-muted">model —</span>
+    <!-- Version of the application (filled in by the server). 程序版本号。 -->
+    <span class="pill pill-muted" id="app-version" data-i18n-title="version.title" title="Version of the application">v__APP_VERSION__</span>
   </div>
 </header>
 
@@ -355,9 +358,9 @@
      element referenced by id already exists when app.js runs.
      脚本按依赖顺序加载，放在 body 末尾以保证元素已存在。 -->
 <script src="/static/vendor/leaflet/leaflet.js"></script>
-<script src="/static/js/i18n.js"></script>
-<script src="/static/js/api.js"></script>
-<script src="/static/js/charts.js"></script>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/i18n.js?v=__APP_VERSION__"></script>
+<script src="/static/js/api.js?v=__APP_VERSION__"></script>
+<script src="/static/js/charts.js?v=__APP_VERSION__"></script>
+<script src="/static/js/app.js?v=__APP_VERSION__"></script>
 </body>
 </html>

@@ -1394,6 +1394,16 @@ function renderLegend() {
  */
 const PARAMS_KEY = 'maritime-route.parameters.v1';
 
+/* The parameter panel is closed by default; whether the user opened it is
+   remembered in this browser. 参数面板默认收起；用户展开后在本浏览器中记住。 */
+const PARAMS_OPEN_KEY = 'maritime-route.params-open';
+try {
+  if (localStorage.getItem(PARAMS_OPEN_KEY) === '1') $('params-panel').open = true;
+} catch (err) { /* storage blocked: stays closed */ }
+$('params-panel').addEventListener('toggle', () => {
+  try { localStorage.setItem(PARAMS_OPEN_KEY, $('params-panel').open ? '1' : '0'); } catch (err) { /* not remembered */ }
+});
+
 /**
  * Load the parameter description (GET /api/parameters) and build the panels.
  * Values changed earlier in this browser are restored.

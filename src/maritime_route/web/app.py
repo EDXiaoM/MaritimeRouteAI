@@ -388,20 +388,40 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    @app.middleware("http")
+    async def no_stale_client(request, call_next):
+        """Make the browser re-validate the page, scripts and styles (version 1.3).
+
+        After an update (``git pull``) a browser could otherwise keep showing
+        the previous version of ``app.js`` or ``index.html`` from its cache.
+        ``no-cache`` still lets it reuse a file that has not changed (ETag),
+        so the cost is one short request per file.
+        更新后浏览器可能仍使用缓存中的旧页面和脚本：要求浏览器每次重新验证。
+        """
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith((".js", ".css", ".html")):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def index() -> HTMLResponse:
         """Serve the single-page client.
 
         ``GET /`` - returns ``static/index.html``. The file is read on every
         request (it is small), so edits to the page are visible without a
-        server restart. Hidden from the OpenAPI schema.
+        server restart. Hidden from the OpenAPI schema. The version of the
+        application replaces ``__APP_VERSION__`` (shown in the header and
+        appended to the script and style URLs, so an updated version never
+        runs with old files from the browser cache).
 
         Returns
         -------
         HTMLResponse
             The HTML page, status 200.
         """
-        return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(page.replace("__APP_VERSION__", APP_VERSION))
 
     # ------------------------------------------------------------------ #
     # Metadata                                                           #

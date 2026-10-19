@@ -32,7 +32,7 @@ const I18N = (() => {
       'app.subtitle': 'Neural-network classification of geographic zones · A* · Dijkstra · genetic · dynamic programming',
       'ws.connecting': 'connecting…', 'ws.open': 'live connection', 'ws.closed': 'reconnecting…',
       'ws.error': 'connection error',
-      'model.pill': 'model {acc}% acc', 'model.none': 'model —', 'model.unavailable': 'model unavailable',
+      'model.pill': 'model {acc}% acc', 'version.title': 'Version of the application', 'model.none': 'model —', 'model.unavailable': 'model unavailable',
       'tab.plan': 'Plan', 'tab.data': 'Data', 'tab.compare': 'Compare', 'tab.model': 'Model', 'tab.history': 'History',
       'own.html': '<b>Your own route:</b> click the chart — the 1st click sets the departure ' +
         '<span class="mk mk-a">A</span>, the 2nd the destination <span class="mk mk-b">B</span>; drag a marker ' +
@@ -183,7 +183,7 @@ const I18N = (() => {
       // parameter groups
       'g.common': 'Lattice and run', 'g.astar': 'A* search', 'g.dijkstra': 'Dijkstra search',
       'g.dynamic': 'Dynamic programming', 'g.genetic': 'Genetic algorithm',
-      'lang.title': 'Interface language',
+      'lang.title': 'Interface language', 'lang.label': 'Language',
     },
 
     ru: {
@@ -191,7 +191,7 @@ const I18N = (() => {
       'app.subtitle': 'Нейросетевая классификация географических зон · A* · Дейкстра · генетический алгоритм · динамическое программирование',
       'ws.connecting': 'подключение…', 'ws.open': 'соединение активно', 'ws.closed': 'переподключение…',
       'ws.error': 'ошибка соединения',
-      'model.pill': 'модель: точность {acc}%', 'model.none': 'модель —', 'model.unavailable': 'модель недоступна',
+      'model.pill': 'модель: точность {acc}%', 'version.title': 'Версия приложения', 'model.none': 'модель —', 'model.unavailable': 'модель недоступна',
       'tab.plan': 'Маршрут', 'tab.data': 'Данные', 'tab.compare': 'Сравнение', 'tab.model': 'Модель',
       'tab.history': 'История',
       'own.html': '<b>Собственный маршрут:</b> щёлкните по карте — первый щелчок задаёт пункт отправления ' +
@@ -339,14 +339,14 @@ const I18N = (() => {
       'chart.epoch': 'эпоха', 'chart.loss': '— потери', 'chart.acc': '— точность', 'chart.truePred': 'истина \\ прогноз',
       'g.common': 'Сетка и запуск', 'g.astar': 'Поиск A*', 'g.dijkstra': 'Поиск Дейкстры',
       'g.dynamic': 'Динамическое программирование', 'g.genetic': 'Генетический алгоритм',
-      'lang.title': 'Язык интерфейса',
+      'lang.title': 'Язык интерфейса', 'lang.label': 'Язык',
     },
 
     zh: {
       'app.title': '海上航线规划系统',
       'app.subtitle': '基于神经网络的地理区域分类 · A* · Dijkstra · 遗传算法 · 动态规划',
       'ws.connecting': '正在连接…', 'ws.open': '实时连接', 'ws.closed': '正在重连…', 'ws.error': '连接错误',
-      'model.pill': '模型准确率 {acc}%', 'model.none': '模型 —', 'model.unavailable': '模型不可用',
+      'model.pill': '模型准确率 {acc}%', 'version.title': '程序版本', 'model.none': '模型 —', 'model.unavailable': '模型不可用',
       'tab.plan': '规划', 'tab.data': '数据', 'tab.compare': '对比', 'tab.model': '模型', 'tab.history': '历史',
       'own.html': '<b>自定义航线：</b>在地图上点击——第一次点击设置出发点 <span class="mk mk-a">A</span>，' +
         '第二次设置目的地 <span class="mk mk-b">B</span>；可以拖动标记，或在下方输入坐标。' +
@@ -467,7 +467,7 @@ const I18N = (() => {
       'chart.epoch': '轮次', 'chart.loss': '— 损失', 'chart.acc': '— 准确率', 'chart.truePred': '真实 \\ 预测',
       'g.common': '网格与运行', 'g.astar': 'A* 搜索', 'g.dijkstra': 'Dijkstra 搜索', 'g.dynamic': '动态规划',
       'g.genetic': '遗传算法',
-      'lang.title': '界面语言',
+      'lang.title': '界面语言', 'lang.label': '语言',
     },
   };
 

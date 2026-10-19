@@ -139,3 +139,20 @@ def test_server_phrases_are_translated():
     assert "повторных поисков: 1, заблокировано ячеек: 4 и более мелкая сетка (0.1°)" in r["ru"][2]
     assert r["zh"][3] == "经过 1 个途经点的航线（2 段）：第 1 段：已找到最优路径; 第 2 段：贝尔曼方程经 40 次迭代求解"
     assert r["ru"][4] == r["zh"][4] == "something the client does not know"
+
+
+def test_page_carries_the_version_and_is_not_cached():
+    """The page shows the version and asks the browser to re-validate it and its scripts (1.3.1)."""
+    from fastapi.testclient import TestClient
+
+    from maritime_route.config import APP_VERSION
+    from maritime_route.web.app import app
+
+    with TestClient(app) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert "__APP_VERSION__" not in page.text
+        assert f"v{APP_VERSION}" in page.text and f"app.js?v={APP_VERSION}" in page.text
+        assert page.headers["cache-control"] == "no-cache"
+        script = client.get(f"/static/js/app.js?v={APP_VERSION}")
+        assert script.status_code == 200 and script.headers["cache-control"] == "no-cache"

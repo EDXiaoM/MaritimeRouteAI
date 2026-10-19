@@ -74,6 +74,7 @@ html, body {
    状态标签：ok 绿色、wait 黄色、bad 红色。 */
 .status-cluster { display: flex; gap: 8px; align-items: center; }
 /* Interface language switch (version 1.3): EN / RU / 中文. 界面语言切换按钮。 */
+.lang-label { color: var(--muted); font-size: 12px; margin-right: -2px; }
 .lang-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .lang-switch button {
   background: var(--bg-2); color: var(--muted); border: 0; padding: 3px 9px;
@@ -350,7 +351,8 @@ output { color: var(--accent); font-variant-numeric: tabular-nums; }
                    cursor: pointer; font-size: 13px; padding: 0 3px; }
 .params { background: var(--bg-3); border: 1px solid var(--line); border-radius: 7px;
           margin: 4px 0 10px; }
-.params > summary { cursor: pointer; padding: 8px 10px; font-size: 12.5px; color: var(--text); }
+.params > summary { cursor: pointer; padding: 9px 10px; font-size: 14px; font-weight: 600; color: var(--text);
+                     border-left: 3px solid var(--accent); border-radius: 7px; }
 .params-changed { color: var(--warn); font-size: 11px; margin-left: 6px; }
 .params-body { padding: 0 10px 4px; }
 .params-group { border-top: 1px solid var(--line); padding: 7px 0 2px; }

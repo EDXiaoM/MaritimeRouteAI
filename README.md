@@ -11,6 +11,11 @@ on neural-network classification of geographic zones.*
 > The **course project** of the author («Sea Course GA», genetic algorithm) is a
 > separate repository: <https://github.com/EDXiaoM/SeaCourseGA>.
 
+**Current version: 1.3.1** (branch `main`, release v1.3.1): interface in English, Russian
+and Chinese (buttons **EN / RU / 中文** in the header), parameters of every search method in
+the panel *Algorithm parameters*. The version is shown at the right of the header. Release
+v1.0 is the earlier version 1.2 and is kept only for the dataset attached to it.
+
 ## Materials of the diploma project
 
 | Material | Where |

@@ -455,7 +455,7 @@ class ServerConfig:
     host: str = os.environ.get("MR_HOST", "127.0.0.1")   # bind address 监听地址
     port: int = int(os.environ.get("MR_PORT", "8000"))   # TCP port 端口
     title: str = "Maritime Route Planner"                # OpenAPI title 服务标题
-    version: str = "1.3.0"                               # OpenAPI version 服务版本
+    version: str = "1.3.1"                               # OpenAPI version 服务版本
     #: Seconds between progress frames pushed over the WebSocket.
     #: WebSocket 进度推送的最小间隔（秒）。
     progress_interval_s: float = 0.15
@@ -466,6 +466,6 @@ SERVER = ServerConfig()
 
 #: Application metadata shown in exports, the PDF report and ``__version__``.
 #: 应用元数据：版本、作者、所属大学（用于导出文件与报告）。
-APP_VERSION: str = "1.3.0"
+APP_VERSION: str = "1.3.1"
 APP_AUTHOR: str = "Li Haoran"
 APP_UNIVERSITY: str = "Brest State Technical University"
