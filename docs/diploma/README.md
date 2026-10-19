@@ -11,7 +11,7 @@ classification of geographic zones*
 
 | Файл · File | Содержание · Content |
 |---|---|
-| [`Diploma_Thesis_Li_Haoran_v1.pdf`](Diploma_Thesis_Li_Haoran_v1.pdf) | пояснительная записка, первый вариант, редакция версии 1.3 программы (замечания руководителя: параметры алгоритмов в приложении, остановка поиска, сохранение результатов в JSON, сложные курсы, интерфейс на трёх языках) (PDF): записка 116 листов (включая приложение C — тест на 100 рейсах и автоматическая проверка по береговой линии; приложение D «Текст программы» — ссылка на этот репозиторий) · explanatory note, first version, revised for version 1.3; appendix D is the link to this repository |
+| [`Diploma_Thesis_Li_Haoran_v1.pdf`](Diploma_Thesis_Li_Haoran_v1.pdf) | пояснительная записка, первый вариант, редакция версии 1.3 программы (замечания руководителя: параметры алгоритмов в приложении, остановка поиска, сохранение результатов в JSON, сложные курсы, интерфейс на трёх языках) (PDF): записка 117 листов (включая приложение C — тест на 100 рейсах и автоматическая проверка по береговой линии; приложение D «Текст программы» — ссылка на этот репозиторий) · explanatory note, first version, revised for version 1.3; appendix D is the link to this repository |
 | [`Diploma_Thesis_Li_Haoran_v1.docx`](Diploma_Thesis_Li_Haoran_v1.docx) | то же в формате Word · the same in Word |
 | [`Assignment_diploma_ru.pdf`](Assignment_diploma_ru.pdf) | задание на дипломное проектирование · assignment |
 
